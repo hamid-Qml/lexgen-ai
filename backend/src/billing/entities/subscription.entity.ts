@@ -25,13 +25,13 @@ export class Subscription {
   user: User;
 
   // Stripe ids
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   stripe_customer_id: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   stripe_subscription_id: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   stripe_price_id: string | null;
 
   // Fine-grained billing tier (matches BillingTier)

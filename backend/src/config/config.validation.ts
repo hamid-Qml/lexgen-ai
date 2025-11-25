@@ -20,14 +20,14 @@ export const configValidationSchema = Joi.object({
   APP_BASE_URL: Joi.string().uri().required(),
 
   // Stripe core
-  STRIPE_SECRET_KEY: Joi.string().required(),
-  STRIPE_WEBHOOK_SECRET: Joi.string().required(),
-  STRIPE_PUBLISHABLE_KEY: Joi.string().required(),
-  STRIPE_MODE: Joi.string().valid('test', 'live').default('test'),
+  // STRIPE_SECRET_KEY: Joi.string().required(),
+  // STRIPE_WEBHOOK_SECRET: Joi.string().required(),
+  // STRIPE_PUBLISHABLE_KEY: Joi.string().required(),
+  // STRIPE_MODE: Joi.string().valid('test', 'live').default('test'),
 
-  // Stripe price IDs – Lexy
-  STRIPE_PRICE_PRO_MONTHLY: Joi.string().required(),
-  STRIPE_PRICE_PRO_YEARLY: Joi.string().required(),
-  STRIPE_PRICE_BUSINESS_MONTHLY: Joi.string().required(),
-  STRIPE_PRICE_BUSINESS_YEARLY: Joi.string().required(),
+  // // Stripe price IDs – Lexy
+  // STRIPE_PRICE_PRO_MONTHLY: Joi.string().required(),
+  // STRIPE_PRICE_PRO_YEARLY: Joi.string().required(),
+  // STRIPE_PRICE_BUSINESS_MONTHLY: Joi.string().required(),
+  // STRIPE_PRICE_BUSINESS_YEARLY: Joi.string().required(),
 });

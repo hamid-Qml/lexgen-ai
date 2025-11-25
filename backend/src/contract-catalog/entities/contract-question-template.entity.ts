@@ -6,7 +6,7 @@ import {
   ManyToOne,
 } from 'typeorm';
 import { ContractType } from './contract-type.entity';
-import { ComplexityLevel } from './contract-type.entity';
+import { ComplexityLevel } from './contract.enums';
 
 export enum QuestionInputType {
   TEXT = 'text',
@@ -33,13 +33,13 @@ export class ContractQuestionTemplate {
   order: number;
 
   @Column({ name: 'question_key' })
-  questionKey: string; // e.g. "party_a_name"
+  questionKey: string;
 
   @Column()
   label: string;
 
   @Column({ nullable: true })
-  description: string | null;
+  description: string;
 
   @Column({
     name: 'input_type',
@@ -50,7 +50,7 @@ export class ContractQuestionTemplate {
   inputType: QuestionInputType;
 
   @Column({ type: 'jsonb', nullable: true })
-  options: any | null; // for select / multi-select
+  options: any | null;
 
   @Column({ name: 'is_required', default: true })
   isRequired: boolean;

@@ -29,38 +29,38 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ unique: true })
+  @Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   password_hash: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   full_name: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   company_name: string | null;
 
   // Onboarding fields
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   abn_acn: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   company_address: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   industry: string | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 50, nullable: true })
   primary_jurisdiction: string | null; // e.g. AU-NSW
 
   @Column('text', { array: true, nullable: true })
   contract_categories_of_interest: string[] | null; // ['commercial', 'employment', ...]
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: 'varchar', length: 50, nullable: true })
   intended_usage: IntendedUsage | null;
 
-  @Column({ default: false })
+  @Column({ type: 'boolean', default: false })
   onboarding_completed: boolean;
 
   @Column({ type: 'timestamptz', nullable: true })
@@ -85,11 +85,11 @@ export class User {
   subscription_tier: SubscriptionTier;
 
   // Stripe customer id (one per user)
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   stripe_customer_id: string | null;
 
   // Reset password fields
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   password_reset_token_hash: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })

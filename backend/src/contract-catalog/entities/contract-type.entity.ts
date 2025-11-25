@@ -8,19 +8,7 @@ import {
 import { ContractQuestionTemplate } from './contract-question-template.entity';
 import { PrecedentDocument } from './precedent-document.entity';
 import { ContractDraft } from '../../contracts/entities/contract-draft.entity';
-
-export enum ContractCategory {
-  COMMERCIAL = 'commercial',
-  EMPLOYMENT = 'employment',
-  TECHNOLOGY = 'technology',
-  FAMILY_LAW = 'family_law',
-}
-
-export enum ComplexityLevel {
-  BASIC = 'basic',
-  STANDARD = 'standard',
-  COMPLEX = 'complex',
-}
+import { ContractCategory, ComplexityLevel } from './contract.enums';
 
 @Entity('contract_types')
 export class ContractType {
@@ -56,7 +44,6 @@ export class ContractType {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
-  // questions per contract type
   @OneToMany(
     () => ContractQuestionTemplate,
     (q) => q.contractType,
@@ -64,14 +51,12 @@ export class ContractType {
   )
   questionTemplates: ContractQuestionTemplate[];
 
-  // precedents for RAG
   @OneToMany(
     () => PrecedentDocument,
     (p) => p.contractType,
   )
   precedents: PrecedentDocument[];
 
-  // drafts referencing this type
   @OneToMany(
     () => ContractDraft,
     (d) => d.contractType,
