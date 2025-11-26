@@ -61,7 +61,7 @@ type BackendContractDraft = {
     category: string;
     complexityLevel: ComplexityLevel;
     jurisdictionDefault?: string;
-    // NEW: optional list of question_keys that belong on the direct form
+    // optional list of question_keys that belong on the direct form
     primaryFormKeys?: string[] | null;
     questionTemplates?: BackendQuestionTemplate[];
   };
@@ -84,6 +84,7 @@ export default function ContractWorkspace() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [startingChat, setStartingChat] = useState(false);
   const [stage, setStage] = useState<Stage>("form");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -156,21 +157,6 @@ export default function ContractWorkspace() {
         } else {
           setStage("form");
         }
-
-        // If no messages yet, seed greeting
-        if (msgs.length === 0) {
-          const greetingText = `Hi! I'm here to help you create your ${
-            d.contractType?.name || "contract"
-          }. First, complete the key details. Then you can use this assistant to refine clauses or add extra terms. When you're ready, I'll generate your contract draft.`;
-
-          const updated = (await contractService.addMessage(id, {
-            sender: "assistant",
-            message: greetingText,
-          })) as BackendContractDraft;
-
-          setDraft(updated);
-          setMessages(updated.chatMessages || []);
-        }
       } catch (e: any) {
         console.error(e);
         toast({
@@ -190,7 +176,45 @@ export default function ContractWorkspace() {
 
   const handleFieldChange = (key: string, value: any) => {
     setAnswers((prev) => ({ ...prev, [key]: value }));
-    // later: PATCH /contracts/:id to persist questionnaire_state
+    // later: PATCH /contracts/:id to persist questionnaire_state on every change
+  };
+
+  const handleStartChat = async () => {
+    if (!draft || !id) return;
+
+    if (!isFormComplete) {
+      toast({
+        title: "Missing details",
+        description:
+          "Please complete all required fields on the Contract Details step before continuing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // If there are already messages (e.g. returning to a draft), just go to chat
+    if (messages.length > 0) {
+      setStage("chat");
+      return;
+    }
+
+    try {
+      setStartingChat(true);
+      const started = (await contractService.startChat(id)) as BackendContractDraft;
+      setDraft(started);
+      setMessages(started.chatMessages || []);
+      setStage("chat");
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Chat error",
+        description:
+          err?.message || "Failed to start the assistant conversation.",
+        variant: "destructive",
+      });
+    } finally {
+      setStartingChat(false);
+    }
   };
 
   const handleSendMessage = async () => {
@@ -199,6 +223,11 @@ export default function ContractWorkspace() {
     try {
       setSending(true);
 
+      // Backend:
+      // - stores user message
+      // - calls mlend to get assistant reply
+      // - stores assistant reply
+      // - returns updated draft with full chat history
       const updated = (await contractService.addMessage(id, {
         sender: "user",
         message: userInput.trim(),
@@ -207,16 +236,6 @@ export default function ContractWorkspace() {
       setDraft(updated);
       setMessages(updated.chatMessages || []);
       setUserInput("");
-
-      // Placeholder assistant reply (local-only for now)
-      const assistantMessage: BackendChatMessage = {
-        id: `${Date.now()}-assistant`,
-        sender: "assistant",
-        message:
-          "Got it. I’ll take this into account when generating your contract. You can keep adding instructions or clauses, or click “Generate Contract” when ready.",
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
     } catch (e: any) {
       console.error(e);
       toast({
@@ -243,46 +262,7 @@ export default function ContractWorkspace() {
     URL.revokeObjectURL(url);
   };
 
-  // Simple local generator until backend AI is wired
-  const generateLocalContract = () => {
-    const title =
-      draft?.contractType?.name || draft?.title || "Contract Agreement";
-
-    const keys = (k: string, fallback: string) =>
-      (answers[k] as string)?.trim() || fallback;
-
-    const party1 = keys("employer_name", keys("party1Name", "First Party"));
-    const party2 = keys("employee_name", keys("party2Name", "Second Party"));
-    const startDate = keys("start_date", keys("startDate", "the Commencement Date"));
-    const term = keys("term", "the agreed term");
-    const fees = keys("fees", "the agreed fees");
-    const jurisdiction = keys(
-      "jurisdiction",
-      draft?.contractType?.jurisdictionDefault || "the relevant Australian jurisdiction",
-    );
-
-    return `${title.toUpperCase()}
-
-This Agreement is made between:
-
-FIRST PARTY: ${party1}
-SECOND PARTY: ${party2}
-
-EFFECTIVE DATE
-This Agreement commences on ${startDate} and continues for ${term}, unless terminated earlier in accordance with this Agreement.
-
-FEES / CONSIDERATION
-The consideration payable under this Agreement is ${fees}.
-
-GOVERNING LAW
-This Agreement is governed by the laws of ${jurisdiction}.
-
-DISCLAIMER
-This document is generated by an AI-assisted prototype and does not constitute legal advice. You should obtain independent legal advice from a qualified lawyer before using or relying on this document.
-`;
-  };
-
-  const handleGenerateContract = () => {
+  const handleGenerateContract = async () => {
     if (!draft || !id) return;
 
     if (!isFormComplete) {
@@ -296,30 +276,25 @@ This document is generated by an AI-assisted prototype and does not constitute l
       return;
     }
 
-    setGenerating(true);
     try {
-      const generatedText = generateLocalContract();
+      setGenerating(true);
 
-      const updated: BackendContractDraft = {
-        ...draft,
-        ai_draft_text: generatedText,
-        status: "ready_for_review",
-        questionnaire_state: answers,
-        updated_at: new Date().toISOString(),
-      };
+      // Call backend, which calls mlend to generate the full contract text
+      const updated = (await contractService.generateContract(id, {
+        answers,
+      })) as BackendContractDraft;
 
       setDraft(updated);
-
-      const assistantMessage: BackendChatMessage = {
-        id: `${Date.now()}-assistant-generated`,
-        sender: "assistant",
-        message:
-          "Your contract has been generated! Review it on the next screen. You can come back and regenerate if you change any details.",
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-
+      setMessages(updated.chatMessages || []);
       setStage("preview");
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        title: "Error",
+        description:
+          e?.message || "Failed to generate contract. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setGenerating(false);
     }
@@ -376,8 +351,7 @@ This document is generated by an AI-assisted prototype and does not constitute l
           </div>
         );
 
-      case "select":
-        // assume options = { choices: string[] } or string[]
+      case "select": {
         const rawChoices =
           (q.options?.choices as string[]) ||
           (Array.isArray(q.options) ? q.options : []);
@@ -399,6 +373,7 @@ This document is generated by an AI-assisted prototype and does not constitute l
             </select>
           </div>
         );
+      }
 
       case "multi_select": {
         const rawChoices =
@@ -473,7 +448,9 @@ This document is generated by an AI-assisted prototype and does not constitute l
             <div className="flex items-center gap-2">
               <FileText className="h-6 w-6 text-primary" />
               <span className="text-xl font-bold text-foreground">
-                {draft?.contractType?.name || draft?.title || "Contract Workspace"}
+                {draft?.contractType?.name ||
+                  draft?.title ||
+                  "Contract Workspace"}
               </span>
             </div>
           </div>
@@ -520,12 +497,12 @@ This document is generated by an AI-assisted prototype and does not constitute l
 
               <div className="mt-6 flex justify-end">
                 <Button
-                  onClick={() => setStage("chat")}
-                  disabled={!isFormComplete}
+                  onClick={handleStartChat}
+                  disabled={!isFormComplete || startingChat}
                   size="lg"
                   className="px-8"
                 >
-                  Next
+                  {startingChat ? "Starting chat..." : "Next"}
                 </Button>
               </div>
             </CardContent>
@@ -630,9 +607,10 @@ This document is generated by an AI-assisted prototype and does not constitute l
                     size="sm"
                     onClick={handleGenerateContract}
                     className="border-gold text-gold hover:bg-gold hover:text-background"
+                    disabled={generating}
                   >
                     <RefreshCw className="h-4 w-4 mr-2" />
-                    Regenerate
+                    {generating ? "Regenerating..." : "Regenerate"}
                   </Button>
                 </div>
               </div>

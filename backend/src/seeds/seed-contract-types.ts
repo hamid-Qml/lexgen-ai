@@ -21,6 +21,7 @@ type ContractTypeSeed = {
   complexity: ComplexityLevel;
   jurisdictionDefault?: string;
   primaryFormKeys?: string[];
+  clarifyingQuestions?: string[];
   questions?: QuestionSeed[];
 };
 
@@ -37,6 +38,15 @@ const TYPES: ContractTypeSeed[] = [
       "salary_amount",
       "employment_type",
       "start_date",
+    ],
+     clarifyingQuestions: [
+      "Describe the role responsibilities and day-to-day duties.",
+      "What are the standard working hours and any flexible arrangements?",
+      "Are there any probation review milestones or performance expectations?",
+      "Are there bonus, commission, or incentive structures that should be included?",
+      "Are there any post-employment restraints (non-compete, non-solicit)?",
+      "Are there any special confidentiality requirements beyond the standard clause?",
+      "How will overtime be treated (if applicable)?",
     ],
     questions: [
       {
@@ -124,6 +134,14 @@ const TYPES: ContractTypeSeed[] = [
       "disclosure_purpose",
       "term_years",
     ],
+     clarifyingQuestions: [
+      "Briefly describe the commercial purpose for sharing confidential information.",
+      "What types of information will actually be exchanged (technical, financial, customer data, etc.)?",
+      "Are there any categories of information you want explicitly excluded from 'Confidential Information'?",
+      "Do you need rights to disclose information to advisers or affiliates?",
+      "Are there specific security or handling requirements for the confidential information?",
+      "Will the parties be making announcements or marketing references about this relationship?",
+    ],
     questions: [
       {
         order: 1,
@@ -206,6 +224,7 @@ async function run() {
         jurisdictionDefault: t.jurisdictionDefault ?? "AU",
         isActive: true,
         primaryFormKeys: t.primaryFormKeys ?? null,
+        clarifyingQuestions: t.clarifyingQuestions ?? null,
       });
       ct = await typeRepo.save(ct);
       console.log(`Inserted contract type: ${t.name}`);

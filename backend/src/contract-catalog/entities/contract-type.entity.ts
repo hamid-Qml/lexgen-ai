@@ -44,9 +44,13 @@ export class ContractType {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
-  // NEW: which question_keys should be shown as direct form inputs
+  // which question_keys should be shown as direct form inputs
   @Column({ name: 'primary_form_keys', type: 'jsonb', nullable: true })
   primaryFormKeys: string[] | null;
+
+  // NEW: clarifying questions used by the chatbot (dynamic Q&A)
+  @Column({ name: 'clarifying_questions', type: 'jsonb', nullable: true })
+  clarifyingQuestions: string[] | null;
 
   @OneToMany(() => ContractQuestionTemplate, (q) => q.contractType, {
     cascade: true,

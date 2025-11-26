@@ -1,3 +1,4 @@
+// src/services/contractService.ts
 import { api } from "./api";
 
 export type CreateDraftPayload = {
@@ -8,12 +9,10 @@ export type CreateDraftPayload = {
 };
 
 export const contractService = {
-  // GET /contracts (list recent)
   async listMyDrafts(limit = 10) {
     return api(`/contracts?limit=${limit}`, { method: "GET" });
   },
 
-  // POST /contracts (create new draft)
   async createDraft(payload: CreateDraftPayload) {
     return api("/contracts", {
       method: "POST",
@@ -21,14 +20,27 @@ export const contractService = {
     });
   },
 
-  // GET /contracts/:id (full draft with messages)
   async getDraft(id: string) {
     return api(`/contracts/${id}`, { method: "GET" });
   },
 
-  // POST /contracts/:id/messages
   async addMessage(id: string, body: { sender: "user" | "assistant"; message: string }) {
     return api(`/contracts/${id}/messages`, {
+      method: "POST",
+      body,
+    });
+  },
+
+  // start the AI conversation (initial assistant message)
+  async startChat(id: string) {
+    return api(`/contracts/${id}/start`, {
+      method: "POST",
+    });
+  },
+
+  // generate contract via backend + mlend
+  async generateContract(id: string, body: { answers: Record<string, any> }) {
+    return api(`/contracts/${id}/generate`, {
       method: "POST",
       body,
     });
