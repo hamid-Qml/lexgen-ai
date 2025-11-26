@@ -10,8 +10,8 @@ type AuthContextType = {
   status: AuthStatus;
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (payload: { email: string; password: string; full_name?: string }) => Promise<void>;
+  login: (email: string, password: string) => Promise<User | null>;
+  signup: (payload: { email: string; password: string; full_name?: string }) => Promise<User | null>;
   logout: () => void;
   refreshMe: () => Promise<void>;
 };
@@ -124,14 +124,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [logout]);
 
-  const login = useCallback(async (email: string, password: string) => {
+const login = useCallback(async (email: string, password: string) => {
     setStatus("loading");
     try {
       const { user: me } = await authService.login(email, password);
       setAuthed(me ?? null, getToken());
       setStatus("authenticated");
+      return me ?? null;       
     } catch (e: any) {
-      setStatus("unauthenticated");  // <-- important
+      setStatus("unauthenticated");
       throw (e instanceof Error ? e : new Error(e?.message || "Login failed"));
     }
   }, []);
@@ -142,8 +143,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { user: me } = await authService.signup(payload);
       setAuthed(me ?? null, getToken());
       setStatus("authenticated");
+      return me ?? null;       
     } catch (e: any) {
-      setStatus("unauthenticated");  // <-- important
+      setStatus("unauthenticated");
       throw (e instanceof Error ? e : new Error(e?.message || "Sign up failed"));
     }
   }, []);

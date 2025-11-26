@@ -13,8 +13,10 @@ import { User, SubscriptionTier } from 'src/users/entities/user.entity';
 import {
   STRIPE_PLAN_KEY_TO_PRICE_ID,
   STRIPE_PRICE_TO_TIER,
+  STRIPE_PRICE_IDS,
   PlanKey,
   BillingTier,
+  initStripePrices
 } from './plan';
 import { ConfigService } from '@nestjs/config';
 
@@ -34,6 +36,13 @@ export class BillingService {
     private readonly configService: ConfigService,
   ) {
     const stripeConfig = this.configService.get('stripe') as any;
+    if (!stripeConfig) {
+      throw new Error('Stripe config not loaded. Did you add load:[stripeConfig] in AppModule?');
+    }
+    initStripePrices(stripeConfig.prices);
+    this.logger.log(
+      `Stripe prices loaded: ${JSON.stringify(STRIPE_PRICE_IDS, null, 2)}`,
+    );
     const secretKey = stripeConfig?.secretKey ?? process.env.STRIPE_SECRET_KEY;
     const mode = stripeConfig?.mode ?? process.env.STRIPE_MODE ?? 'test';
 
@@ -77,6 +86,7 @@ export class BillingService {
 
     const priceId = STRIPE_PLAN_KEY_TO_PRICE_ID[planKey];
     if (!priceId) {
+      console.log(STRIPE_PLAN_KEY_TO_PRICE_ID);
       this.logger.warn(
         `createCheckoutSession: unknown planKey="${planKey}" from user ${userId}`,
       );

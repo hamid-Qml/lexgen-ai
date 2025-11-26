@@ -44,22 +44,18 @@ export class ContractType {
   @Column({ name: 'is_active', default: true })
   isActive: boolean;
 
-  @OneToMany(
-    () => ContractQuestionTemplate,
-    (q) => q.contractType,
-    { cascade: true },
-  )
+  // NEW: which question_keys should be shown as direct form inputs
+  @Column({ name: 'primary_form_keys', type: 'jsonb', nullable: true })
+  primaryFormKeys: string[] | null;
+
+  @OneToMany(() => ContractQuestionTemplate, (q) => q.contractType, {
+    cascade: true,
+  })
   questionTemplates: ContractQuestionTemplate[];
 
-  @OneToMany(
-    () => PrecedentDocument,
-    (p) => p.contractType,
-  )
+  @OneToMany(() => PrecedentDocument, (p) => p.contractType)
   precedents: PrecedentDocument[];
 
-  @OneToMany(
-    () => ContractDraft,
-    (d) => d.contractType,
-  )
+  @OneToMany(() => ContractDraft, (d) => d.contractType)
   drafts: ContractDraft[];
 }

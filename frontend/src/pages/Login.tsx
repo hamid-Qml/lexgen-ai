@@ -16,22 +16,21 @@ const Login = () => {
 
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { login, user } = useAuth();
+  const { login } = useAuth();   // no need to read user here
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
 
     try {
-      await login(email, password);
+      const me = await login(email, password);   // ✅ get user from context
 
       toast({
         title: 'Welcome back',
         description: 'You are now signed in to Lexy.',
       });
 
-      // If later you add onboarding_complete on the backend, you can branch here:
-      if (user && (user as any).onboarding_complete === false) {
+      if (me && me.onboarding_completed === false) {
         navigate('/onboarding');
       } else {
         navigate('/dashboard');

@@ -17,14 +17,17 @@ export interface ContractType {
   question_count: number;
 }
 
+export type ContractStatus = 'in_progress' | 'ready_for_review' | 'finalized';
+
 export interface ContractDraft {
   id: string;
   user_id: string;
+  title: string;
   contract_type_id: string;
   contract_type_name: string;
   questionnaire_state: Record<string, any>;
   ai_draft_text: string;
-  status: 'draft' | 'generated' | 'finalized';
+  status: ContractStatus;
   created_at: string;
   updated_at: string;
 }

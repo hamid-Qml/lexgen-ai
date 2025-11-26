@@ -10,7 +10,10 @@ type BaseUser = {
   id: string;
   email: string;
   full_name?: string | null;
-  onboarding_complete?: boolean;
+  onboarding_completed?: boolean;
+  primary_jurisdiction?: string | null;
+  contract_categories_of_interest?: string[] | null;
+  intended_usage?: 'personal' | 'business' | 'legal_practitioner' | null;
 };
 
 // Public user type used everywhere in the frontend

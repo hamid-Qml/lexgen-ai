@@ -1,117 +1,277 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { getCurrentUser, saveUser } from '@/lib/storage';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, Check, Crown } from 'lucide-react';
-import { toast } from 'sonner';
+// src/pages/Subscriptions.tsx
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, Check, Crown } from "lucide-react";
+import { toast } from "sonner";
+
+import { useAuth } from "@/context/AuthContext";
+import {
+  subscriptionService,
+  type SubscriptionSummary,
+} from "@/services/subscriptionService";
+
+// Fallbacks match backend BillingTier keys
+const PLAN_KEYS = {
+  PRO_MONTHLY: import.meta.env.VITE_PLAN_PRO_MONTHLY ?? "pro_monthly",
+  PRO_YEARLY: import.meta.env.VITE_PLAN_PRO_YEARLY ?? "pro_yearly",
+};
+
+type UiPlanId = "free" | "pro";
+
+const PLANS: {
+  id: UiPlanId;
+  name: string;
+  price: string;
+  period: string;
+  badge?: string;
+  features: string[];
+}[] = [
+  {
+    id: "free",
+    name: "Free",
+    price: "$0",
+    period: "forever",
+    features: [
+      "3 contracts per month",
+      "Limited contract types",
+      "Standard support",
+      "Watermarked PDF downloads",
+    ],
+  },
+  {
+    id: "pro",
+    name: "Professional",
+    price: "$29",
+    period: "per month",
+    badge: "Most Popular",
+    features: [
+      "Unlimited contracts",
+      "All 170+ contract types",
+      "Priority support",
+      "PDF & DOCX downloads (no watermark)",
+      "Advanced AI assistance",
+      "Saved questionnaires",
+    ],
+  },
+];
 
 export default function Subscriptions() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(getCurrentUser());
+  const { user } = useAuth();
 
-  const plans = [
-    {
-      id: 'free',
-      name: 'Free',
-      price: '$0',
-      period: 'forever',
-      features: [
-        '5 contracts per month',
-        'Basic contract types',
-        'Standard support',
-        'PDF downloads',
-      ],
-    },
-    {
-      id: 'pro',
-      name: 'Professional',
-      price: '$49',
-      period: 'per month',
-      features: [
-        'Unlimited contracts',
-        'All 170+ contract types',
-        'Priority support',
-        'PDF & DOCX downloads',
-        'Advanced AI assistance',
-        'Custom templates',
-        'Team collaboration',
-        'Version history',
-      ],
-    },
-  ];
+  const [summary, setSummary] = useState<SubscriptionSummary | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleChangePlan = (planId: 'free' | 'pro') => {
-    if (!user) return;
+  const effectiveTier = summary?.tier ?? "free"; // matches BillingTier
 
-    const updatedUser = {
-      ...user,
-      subscription_tier: planId,
-    };
+  const loadSummary = async () => {
+    try {
+      const s = await subscriptionService.getMySubscription();
+      setSummary(s);
+    } catch (e: any) {
+      console.error("Failed to load subscription summary", e);
+      toast.error("Could not load subscription details.");
+    }
+  };
 
-    saveUser(updatedUser);
-    setUser(updatedUser);
-    toast.success(`Successfully switched to ${planId === 'pro' ? 'Professional' : 'Free'} plan!`);
+  useEffect(() => {
+    loadSummary();
+  }, []);
+
+  const handleUpgradePro = async () => {
+    setLoading(true);
+    try {
+      const { url } = await subscriptionService.startCheckout(
+        PLAN_KEYS.PRO_MONTHLY
+      );
+      if (!url) throw new Error("No checkout URL returned");
+      window.location.href = url;
+    } catch (e: any) {
+      console.error("Upgrade checkout failed", e);
+      toast.error(e?.message || "Failed to start checkout.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenPortal = async () => {
+    setLoading(true);
+    try {
+      const { url } = await subscriptionService.openPortal();
+      if (!url) throw new Error("No portal URL returned");
+      window.location.href = url;
+    } catch (e: any) {
+      console.error("Open portal failed", e);
+      toast.error(e?.message || "Failed to open billing portal.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isPaidTier = effectiveTier !== "free";
+
+  const isCurrentForPlan = (planId: UiPlanId) => {
+    if (planId === "free") {
+      return effectiveTier === "free";
+    }
+    // Treat any pro_* as Pro
+    if (planId === "pro") {
+      return effectiveTier.startsWith("pro_");
+    }
+    return false;
+  };
+
+  const renderPlanButton = (planId: UiPlanId) => {
+    const isCurrent = isCurrentForPlan(planId);
+
+    if (planId === "free") {
+      if (isCurrent) {
+        return (
+          <Button className="w-full" variant="outline" disabled>
+            Current Plan
+          </Button>
+        );
+      }
+      if (isPaidTier) {
+        return (
+          <Button
+            className="w-full"
+            variant="outline"
+            disabled={loading}
+            onClick={handleOpenPortal}
+          >
+            Manage in Billing Portal
+          </Button>
+        );
+      }
+      // unreachable: free & not current is odd, but handle gracefully
+      return (
+        <Button className="w-full" variant="outline" disabled>
+          Included
+        </Button>
+      );
+    }
+
+    // Pro plan
+    if (isCurrent) {
+      return (
+        <Button
+          className="w-full bg-gold/90 hover:bg-gold text-background"
+          disabled={loading}
+          onClick={handleOpenPortal}
+        >
+          Manage Billing
+        </Button>
+      );
+    }
+
+    return (
+      <Button
+        className="w-full bg-gold hover:bg-gold/90 text-background"
+        disabled={loading}
+        onClick={handleUpgradePro}
+      >
+        Upgrade to Pro
+      </Button>
+    );
   };
 
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border/40 bg-card/50 backdrop-blur-sm">
+      <header className="border-b border-border/40 bg-card/60 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/dashboard')}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/dashboard")}
+            >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <span className="text-xl font-bold text-foreground">Subscriptions & Billing</span>
+            <span className="text-xl font-semibold tracking-wide text-foreground">
+              Subscriptions & Billing
+            </span>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-12">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-foreground mb-4">
+      <main className="container mx-auto px-4 py-12 max-w-5xl">
+        <div className="text-center mb-10">
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-foreground mb-3">
             Choose Your Plan
           </h1>
-          <p className="text-muted-foreground text-lg">
-            Upgrade to unlock all features and unlimited contracts
+          <p className="text-muted-foreground text-sm sm:text-base">
+            Upgrade to unlock unlimited contracts, full library access, and
+            priority AI assistance.
           </p>
+          {user && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Signed in as <span className="font-medium">{user.email}</span>
+              {summary && (
+                <>
+                  {" — "}
+                  Current tier:{" "}
+                  <span className="font-medium capitalize">
+                    {effectiveTier.replace("_", " ")}
+                  </span>
+                  {summary.status !== "inactive" && (
+                    <span className="ml-1 text-[11px] uppercase tracking-wide">
+                      ({summary.status})
+                    </span>
+                  )}
+                </>
+              )}
+            </p>
+          )}
         </div>
 
         {/* Plans Grid */}
-        <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
-          {plans.map((plan) => {
-            const isCurrentPlan = user?.subscription_tier === plan.id;
-            const isPro = plan.id === 'pro';
+        <div className="grid md:grid-cols-2 gap-8">
+          {PLANS.map((plan) => {
+            const isPro = plan.id === "pro";
+            const isCurrent = isCurrentForPlan(plan.id);
 
             return (
               <Card
                 key={plan.id}
                 className={`relative ${
-                  isPro
-                    ? 'border-primary/60 shadow-lg shadow-primary/20'
-                    : ''
+                  isPro ? "border-primary/60 shadow-lg shadow-primary/15" : ""
                 }`}
               >
                 {isPro && (
                   <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-gold text-background px-4 py-1 flex items-center gap-1">
+                    <Badge className="bg-gold text-background px-4 py-1 flex items-center gap-1 text-xs">
                       <Crown className="h-3 w-3" />
-                      Most Popular
+                      {plan.badge ?? "Most Popular"}
                     </Badge>
                   </div>
                 )}
-                
-                <CardHeader className="text-center pb-8 pt-6">
-                  <CardTitle className="text-2xl mb-2">{plan.name}</CardTitle>
+
+                <CardHeader className="text-center pb-7 pt-6">
+                  <CardTitle className="text-2xl font-semibold mb-2">
+                    {plan.name}
+                  </CardTitle>
                   <div className="mb-4">
-                    <span className="text-4xl font-bold text-foreground">{plan.price}</span>
-                    <span className="text-muted-foreground ml-2">{plan.period}</span>
+                    <span className="text-4xl font-semibold text-foreground">
+                      {plan.price}
+                    </span>
+                    <span className="text-muted-foreground ml-2 text-sm">
+                      {plan.period}
+                    </span>
                   </div>
-                  {isCurrentPlan && (
-                    <Badge variant="outline" className="mx-auto">
+                  {isCurrent && (
+                    <Badge variant="outline" className="mx-auto text-xs">
                       Current Plan
                     </Badge>
                   )}
@@ -121,24 +281,15 @@ export default function Subscriptions() {
                   <ul className="space-y-3">
                     {plan.features.map((feature, index) => (
                       <li key={index} className="flex items-start gap-3">
-                        <Check className="h-5 w-5 text-accent shrink-0 mt-0.5" />
-                        <span className="text-sm text-foreground">{feature}</span>
+                        <Check className="h-4 w-4 text-accent shrink-0 mt-0.5" />
+                        <span className="text-sm text-foreground">
+                          {feature}
+                        </span>
                       </li>
                     ))}
                   </ul>
 
-                  <Button
-                    className={`w-full ${
-                      isPro
-                        ? 'bg-gold hover:bg-gold/90 text-background'
-                        : ''
-                    }`}
-                    variant={isPro ? 'default' : 'outline'}
-                    disabled={isCurrentPlan}
-                    onClick={() => handleChangePlan(plan.id as 'free' | 'pro')}
-                  >
-                    {isCurrentPlan ? 'Current Plan' : isPro ? 'Upgrade to Pro' : 'Switch to Free'}
-                  </Button>
+                  {renderPlanButton(plan.id)}
                 </CardContent>
               </Card>
             );
@@ -147,35 +298,49 @@ export default function Subscriptions() {
 
         {/* FAQ Section */}
         <div className="mt-16 max-w-3xl mx-auto">
-          <h2 className="text-2xl font-bold text-center mb-8">Frequently Asked Questions</h2>
-          <div className="space-y-4">
+          <h2 className="text-2xl font-semibold text-center mb-8">
+            Frequently Asked Questions
+          </h2>
+          <div className="space-y-4 text-sm">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Can I cancel anytime?</CardTitle>
+                <CardTitle className="text-base">
+                  Can I cancel anytime?
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <CardDescription>
-                  Yes! You can cancel your subscription at any time. You'll retain access until the end of your billing period.
+                  Yes. You can cancel your subscription at any time from the
+                  billing portal. You&apos;ll retain access until the end of
+                  your current billing period.
                 </CardDescription>
               </CardContent>
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">What payment methods do you accept?</CardTitle>
+                <CardTitle className="text-base">
+                  How do I update my payment details?
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <CardDescription>
-                  We accept all major credit cards, debit cards, and PayPal.
+                  Click &quot;Manage Billing&quot; on your current plan to open
+                  the secure Stripe billing portal. From there you can update
+                  cards, invoices, and receipts.
                 </CardDescription>
               </CardContent>
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Is there a free trial?</CardTitle>
+                <CardTitle className="text-base">
+                  Is there a free plan?
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <CardDescription>
-                  The free plan is available forever with limited features. Upgrade to Pro for unlimited access.
+                  Yes. The Free plan is available forever with limited monthly
+                  contracts and library access. Pro unlocks the full Lexy
+                  experience.
                 </CardDescription>
               </CardContent>
             </Card>

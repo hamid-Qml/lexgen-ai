@@ -12,12 +12,15 @@ import { ContractCatalogModule } from './contract-catalog/contract-catalog.modul
 import { ContractsModule } from './contracts/contracts.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 
+import stripeConfig from './config/stripe.config';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       expandVariables: true,
       validationSchema: configValidationSchema,
+      load: [stripeConfig]
     }),
 
     ThrottlerModule.forRoot({

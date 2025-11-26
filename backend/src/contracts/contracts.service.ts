@@ -1,14 +1,11 @@
 // src/contracts/contracts.service.ts
-import {
-    Injectable,
-    NotFoundException,
-    ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { ContractDraft } from './entities/contract-draft.entity';
 import { ChatMessage } from './entities/chat-message.entity';
-import { Repository } from 'typeorm';
 import { ContractType } from 'src/contract-catalog/entities/contract-type.entity';
+import { ContractQuestionTemplate } from 'src/contract-catalog/entities/contract-question-template.entity';
 import { CreateContractDraftDto } from './dto/create-contract-draft.dto';
 import { CreateChatMessageDto } from './dto/create-chat-message.dto';
 import { User } from 'src/users/entities/user.entity';
@@ -18,10 +15,16 @@ export class ContractsService {
     constructor(
         @InjectRepository(ContractDraft)
         private drafts: Repository<ContractDraft>,
+
         @InjectRepository(ChatMessage)
         private messages: Repository<ChatMessage>,
+
         @InjectRepository(ContractType)
         private contractTypes: Repository<ContractType>,
+
+        @InjectRepository(ContractQuestionTemplate)
+        private questionTemplates: Repository<ContractQuestionTemplate>,
+
         @InjectRepository(User)
         private users: Repository<User>,
     ) { }
@@ -47,7 +50,7 @@ export class ContractsService {
         }
 
         const title =
-            dto.title || `${contractType.name} – Draft for ${user.company_name ?? user.full_name ?? user.email}`;
+            dto.title || `${contractType.name}`;
 
         const jurisdiction =
             dto.jurisdiction || contractType.jurisdictionDefault;
@@ -69,6 +72,7 @@ export class ContractsService {
     async listDraftsForUser(userId: string, limit = 10) {
         return this.drafts.find({
             where: { user: { id: userId } },
+            relations: ['contractType'],
             order: { updated_at: 'DESC' },
             take: limit,
         });
@@ -80,7 +84,7 @@ export class ContractsService {
     ): Promise<ContractDraft> {
         const draft = await this.drafts.findOne({
             where: { id: draftId },
-            relations: ['user', 'chatMessages'],
+            relations: ['user', 'contractType', 'chatMessages'],
             order: {
                 chatMessages: { created_at: 'ASC' },
             } as any,
@@ -89,6 +93,17 @@ export class ContractsService {
         if (!draft) throw new NotFoundException('Contract draft not found');
         if (draft.user.id !== userId) {
             throw new ForbiddenException('Not your draft');
+        }
+
+        // Attach question templates for this contract type
+        if (draft.contractType) {
+            const qts = await this.questionTemplates.find({
+                where: { contractType: { id: draft.contractType.id } },
+                order: { order: 'ASC' },
+            });
+
+            // TypeORM entity is a class instance, so we can just assign
+            (draft.contractType as any).questionTemplates = qts;
         }
 
         return draft;

@@ -7,10 +7,11 @@ import { ContractsService } from './contracts.service';
 import { ContractsController } from './contracts.controller';
 import { ContractType } from 'src/contract-catalog/entities/contract-type.entity';
 import { User } from 'src/users/entities/user.entity';
+import { ContractQuestionTemplate } from 'src/contract-catalog/entities/contract-question-template.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ContractDraft, ChatMessage, ContractType, User]),
+    TypeOrmModule.forFeature([ContractDraft, ChatMessage, ContractType, User, ContractQuestionTemplate]),
   ],
   providers: [ContractsService],
   controllers: [ContractsController],

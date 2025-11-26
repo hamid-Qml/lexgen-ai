@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -18,8 +19,28 @@ import {
 import { contractService } from "@/services/contractService";
 import { useToast } from "@/hooks/use-toast";
 
-// We keep these as `any` for now to avoid breaking the existing types.
-// Later you can update `ContractDraft` and `ChatMessage` in `@/types` to match the backend.
+type QuestionInputType =
+  | "text"
+  | "textarea"
+  | "select"
+  | "number"
+  | "date"
+  | "multi_select";
+
+type ComplexityLevel = "basic" | "standard" | "complex";
+
+type BackendQuestionTemplate = {
+  id: string;
+  order: number;
+  questionKey: string;
+  label: string;
+  description?: string | null;
+  inputType: QuestionInputType;
+  options: any | null;
+  isRequired: boolean;
+  complexityLevel: ComplexityLevel;
+};
+
 type BackendChatMessage = {
   id: string;
   sender: "user" | "assistant" | "system";
@@ -38,12 +59,18 @@ type BackendContractDraft = {
     id: string;
     name: string;
     category: string;
-    complexityLevel: "basic" | "standard" | "complex";
+    complexityLevel: ComplexityLevel;
+    jurisdictionDefault?: string;
+    // NEW: optional list of question_keys that belong on the direct form
+    primaryFormKeys?: string[] | null;
+    questionTemplates?: BackendQuestionTemplate[];
   };
   chatMessages?: BackendChatMessage[];
   created_at: string;
   updated_at: string;
 };
+
+type Stage = "form" | "chat" | "preview";
 
 export default function ContractWorkspace() {
   const { id } = useParams<{ id: string }>();
@@ -57,6 +84,7 @@ export default function ContractWorkspace() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [stage, setStage] = useState<Stage>("form");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -64,6 +92,41 @@ export default function ContractWorkspace() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Helper: decide which questions belong on the “form” step
+  const getPrimaryQuestions = (d: BackendContractDraft | null) => {
+    if (!d?.contractType?.questionTemplates) return [];
+    const all = [...d.contractType.questionTemplates];
+
+    // If we have an explicit list from backend, use that
+    const primaryKeys = d.contractType.primaryFormKeys;
+    if (primaryKeys && primaryKeys.length > 0) {
+      return all
+        .filter((q) => primaryKeys.includes(q.questionKey))
+        .sort((a, b) => a.order - b.order);
+    }
+
+    // Fallback heuristic: show BASIC questions in the form step
+    return all
+      .filter((q) => q.complexityLevel === "basic")
+      .sort((a, b) => a.order - b.order);
+  };
+
+  // required-field completeness based on templates
+  const isFormComplete = (() => {
+    if (!draft) return false;
+    const primary = getPrimaryQuestions(draft);
+    if (primary.length === 0) return false;
+
+    return primary
+      .filter((q) => q.isRequired)
+      .every((q) => {
+        const v = answers[q.questionKey];
+        if (v === null || v === undefined) return false;
+        if (Array.isArray(v)) return v.length > 0;
+        return String(v).trim().length > 0;
+      });
+  })();
 
   // Load draft + messages from backend
   useEffect(() => {
@@ -79,16 +142,26 @@ export default function ContractWorkspace() {
       try {
         setLoading(true);
         const d = (await contractService.getDraft(id)) as BackendContractDraft;
+
         setDraft(d);
         setAnswers(d.questionnaire_state || {});
         const msgs = d.chatMessages || [];
         setMessages(msgs);
 
-        // If no messages yet, seed a greeting from assistant
+        // Decide initial stage
+        if (d.ai_draft_text) {
+          setStage("preview");
+        } else if (msgs.length > 0) {
+          setStage("chat");
+        } else {
+          setStage("form");
+        }
+
+        // If no messages yet, seed greeting
         if (msgs.length === 0) {
           const greetingText = `Hi! I'm here to help you create your ${
             d.contractType?.name || "contract"
-          }. Fill out the form above with the basic details, and feel free to ask me any questions about terms, clauses, or legal requirements. Once you're ready, click "Generate Contract" to create your document.`;
+          }. First, complete the key details. Then you can use this assistant to refine clauses or add extra terms. When you're ready, I'll generate your contract draft.`;
 
           const updated = (await contractService.addMessage(id, {
             sender: "assistant",
@@ -115,13 +188,17 @@ export default function ContractWorkspace() {
     load();
   }, [id, navigate, toast]);
 
+  const handleFieldChange = (key: string, value: any) => {
+    setAnswers((prev) => ({ ...prev, [key]: value }));
+    // later: PATCH /contracts/:id to persist questionnaire_state
+  };
+
   const handleSendMessage = async () => {
     if (!userInput.trim() || !draft || !id) return;
 
     try {
       setSending(true);
 
-      // Persist user message to backend
       const updated = (await contractService.addMessage(id, {
         sender: "user",
         message: userInput.trim(),
@@ -131,13 +208,12 @@ export default function ContractWorkspace() {
       setMessages(updated.chatMessages || []);
       setUserInput("");
 
-      // (Optional) local assistant reply for now – not persisted.
-      // You can later replace this with a real AI call + another addMessage().
+      // Placeholder assistant reply (local-only for now)
       const assistantMessage: BackendChatMessage = {
         id: `${Date.now()}-assistant`,
         sender: "assistant",
         message:
-          "I understand your question. For specific legal advice, please consult a qualified lawyer. I can help you understand the general structure and common clauses in this type of contract. What specific aspect would you like to know more about?",
+          "Got it. I’ll take this into account when generating your contract. You can keep adding instructions or clauses, or click “Generate Contract” when ready.",
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
@@ -167,29 +243,23 @@ export default function ContractWorkspace() {
     URL.revokeObjectURL(url);
   };
 
-  const handleFieldChange = (field: string, value: string) => {
-    const newAnswers = { ...answers, [field]: value };
-    setAnswers(newAnswers);
-
-    // NOTE:
-    // Right now this only updates local state.
-    // Later we can add PATCH /contracts/:id to persist questionnaire_state.
-  };
-
-  const isFormComplete =
-    answers.party1Name && answers.party2Name && answers.startDate && answers.jurisdiction;
-
   // Simple local generator until backend AI is wired
   const generateLocalContract = () => {
     const title =
       draft?.contractType?.name || draft?.title || "Contract Agreement";
-    const party1 = answers.party1Name || "Party A";
-    const party2 = answers.party2Name || "Party B";
-    const startDate = answers.startDate || "the Commencement Date";
-    const term = answers.term || "the agreed term";
-    const fees = answers.fees || "the agreed fees";
-    const jurisdiction =
-      answers.jurisdiction || "the relevant Australian jurisdiction";
+
+    const keys = (k: string, fallback: string) =>
+      (answers[k] as string)?.trim() || fallback;
+
+    const party1 = keys("employer_name", keys("party1Name", "First Party"));
+    const party2 = keys("employee_name", keys("party2Name", "Second Party"));
+    const startDate = keys("start_date", keys("startDate", "the Commencement Date"));
+    const term = keys("term", "the agreed term");
+    const fees = keys("fees", "the agreed fees");
+    const jurisdiction = keys(
+      "jurisdiction",
+      draft?.contractType?.jurisdictionDefault || "the relevant Australian jurisdiction",
+    );
 
     return `${title.toUpperCase()}
 
@@ -214,13 +284,22 @@ This document is generated by an AI-assisted prototype and does not constitute l
 
   const handleGenerateContract = () => {
     if (!draft || !id) return;
-    if (!isFormComplete) return;
+
+    if (!isFormComplete) {
+      toast({
+        title: "Missing details",
+        description:
+          "Please complete all required fields on the Contract Details step before generating.",
+        variant: "destructive",
+      });
+      setStage("form");
+      return;
+    }
 
     setGenerating(true);
     try {
       const generatedText = generateLocalContract();
 
-      // Local-only update for now (no backend endpoint yet)
       const updated: BackendContractDraft = {
         ...draft,
         ai_draft_text: generatedText,
@@ -235,14 +314,148 @@ This document is generated by an AI-assisted prototype and does not constitute l
         id: `${Date.now()}-assistant-generated`,
         sender: "assistant",
         message:
-          "Your contract has been generated! Review it below and click 'Download' when you're ready. You can also regenerate it if you want to update any details.",
+          "Your contract has been generated! Review it on the next screen. You can come back and regenerate if you change any details.",
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, assistantMessage]);
+
+      setStage("preview");
     } finally {
       setGenerating(false);
     }
   };
+
+  const renderField = (q: BackendQuestionTemplate) => {
+    const value = answers[q.questionKey] ?? "";
+
+    const commonLabel = (
+      <Label htmlFor={q.questionKey}>
+        {q.label}
+        {q.isRequired && <span className="text-red-500 ml-0.5">*</span>}
+      </Label>
+    );
+
+    switch (q.inputType) {
+      case "textarea":
+        return (
+          <div key={q.id}>
+            {commonLabel}
+            <Textarea
+              id={q.questionKey}
+              value={value}
+              onChange={(e) => handleFieldChange(q.questionKey, e.target.value)}
+              placeholder={q.description || ""}
+            />
+          </div>
+        );
+
+      case "number":
+        return (
+          <div key={q.id}>
+            {commonLabel}
+            <Input
+              id={q.questionKey}
+              type="number"
+              value={value}
+              onChange={(e) => handleFieldChange(q.questionKey, e.target.value)}
+              placeholder={q.description || ""}
+            />
+          </div>
+        );
+
+      case "date":
+        return (
+          <div key={q.id}>
+            {commonLabel}
+            <Input
+              id={q.questionKey}
+              type="date"
+              value={value}
+              onChange={(e) => handleFieldChange(q.questionKey, e.target.value)}
+            />
+          </div>
+        );
+
+      case "select":
+        // assume options = { choices: string[] } or string[]
+        const rawChoices =
+          (q.options?.choices as string[]) ||
+          (Array.isArray(q.options) ? q.options : []);
+        return (
+          <div key={q.id}>
+            {commonLabel}
+            <select
+              id={q.questionKey}
+              className="mt-1 block w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={value}
+              onChange={(e) => handleFieldChange(q.questionKey, e.target.value)}
+            >
+              <option value="">Select an option</option>
+              {rawChoices.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
+            </select>
+          </div>
+        );
+
+      case "multi_select": {
+        const rawChoices =
+          (q.options?.choices as string[]) ||
+          (Array.isArray(q.options) ? q.options : []);
+        const current: string[] = Array.isArray(value) ? value : [];
+        const toggle = (opt: string) => {
+          if (current.includes(opt)) {
+            handleFieldChange(
+              q.questionKey,
+              current.filter((v) => v !== opt),
+            );
+          } else {
+            handleFieldChange(q.questionKey, [...current, opt]);
+          }
+        };
+
+        return (
+          <div key={q.id}>
+            {commonLabel}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {rawChoices.map((opt) => {
+                const selected = current.includes(opt);
+                return (
+                  <Button
+                    key={opt}
+                    type="button"
+                    variant={selected ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => toggle(opt)}
+                  >
+                    {opt}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
+
+      case "text":
+      default:
+        return (
+          <div key={q.id}>
+            {commonLabel}
+            <Input
+              id={q.questionKey}
+              value={value}
+              onChange={(e) => handleFieldChange(q.questionKey, e.target.value)}
+              placeholder={q.description || ""}
+            />
+          </div>
+        );
+    }
+  };
+
+  const primaryQuestions = getPrimaryQuestions(draft);
 
   return (
     <div className="min-h-screen bg-background">
@@ -250,7 +463,11 @@ This document is generated by an AI-assisted prototype and does not constitute l
       <header className="border-b border-border/40 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate("/dashboard")}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/dashboard")}
+            >
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className="flex items-center gap-2">
@@ -274,182 +491,150 @@ This document is generated by an AI-assisted prototype and does not constitute l
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="container mx-auto px-4 py-6 max-w-6xl">
         {loading && (
-          <p className="text-muted-foreground mb-4">Loading contract workspace...</p>
+          <p className="text-muted-foreground mb-4">
+            Loading contract workspace...
+          </p>
         )}
 
-        {/* Contract Details Form */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              Contract Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="party1Name">First Party Name *</Label>
-                <Input
-                  id="party1Name"
-                  value={answers.party1Name || ""}
-                  onChange={(e) => handleFieldChange("party1Name", e.target.value)}
-                  placeholder="e.g., Acme Corporation Pty Ltd"
-                />
+        {/* STEP 1: Contract Details (form only) */}
+        {stage === "form" && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-primary" />
+                Contract Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-2 gap-4">
+                {primaryQuestions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No form questions configured for this contract type yet.
+                  </p>
+                ) : (
+                  primaryQuestions.map((q) => renderField(q))
+                )}
               </div>
-              <div>
-                <Label htmlFor="party1Address">First Party Address</Label>
-                <Input
-                  id="party1Address"
-                  value={answers.party1Address || ""}
-                  onChange={(e) => handleFieldChange("party1Address", e.target.value)}
-                  placeholder="e.g., Level 5, 123 Business St, Sydney"
-                />
-              </div>
-              <div>
-                <Label htmlFor="party2Name">Second Party Name *</Label>
-                <Input
-                  id="party2Name"
-                  value={answers.party2Name || ""}
-                  onChange={(e) => handleFieldChange("party2Name", e.target.value)}
-                  placeholder="e.g., Tech Innovations Pty Ltd"
-                />
-              </div>
-              <div>
-                <Label htmlFor="party2Address">Second Party Address</Label>
-                <Input
-                  id="party2Address"
-                  value={answers.party2Address || ""}
-                  onChange={(e) => handleFieldChange("party2Address", e.target.value)}
-                  placeholder="e.g., Suite 10, 456 Innovation Rd, Melbourne"
-                />
-              </div>
-              <div>
-                <Label htmlFor="startDate">Start Date *</Label>
-                <Input
-                  id="startDate"
-                  type="date"
-                  value={answers.startDate || ""}
-                  onChange={(e) => handleFieldChange("startDate", e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="term">Contract Term</Label>
-                <Input
-                  id="term"
-                  value={answers.term || ""}
-                  onChange={(e) => handleFieldChange("term", e.target.value)}
-                  placeholder="e.g., 12 months"
-                />
-              </div>
-              <div>
-                <Label htmlFor="fees">Fees / Consideration</Label>
-                <Input
-                  id="fees"
-                  value={answers.fees || ""}
-                  onChange={(e) => handleFieldChange("fees", e.target.value)}
-                  placeholder="e.g., $50,000 AUD"
-                />
-              </div>
-              <div>
-                <Label htmlFor="jurisdiction">Governing Law / Jurisdiction *</Label>
-                <Input
-                  id="jurisdiction"
-                  value={answers.jurisdiction || ""}
-                  onChange={(e) => handleFieldChange("jurisdiction", e.target.value)}
-                  placeholder="e.g., New South Wales"
-                />
-              </div>
-            </div>
 
-            <div className="mt-6 flex justify-center">
-              <Button
-                onClick={handleGenerateContract}
-                disabled={!isFormComplete || generating}
-                size="lg"
-                className="bg-gold hover:bg-gold/90 text-background font-semibold px-8"
-              >
-                <Sparkles className="h-5 w-5 mr-2" />
-                {generating
-                  ? "Generating..."
-                  : draft?.ai_draft_text
-                  ? "Regenerate Contract"
-                  : "Generate Contract"}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="mt-6 flex justify-end">
+                <Button
+                  onClick={() => setStage("chat")}
+                  disabled={!isFormComplete}
+                  size="lg"
+                  className="px-8"
+                >
+                  Next
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Chat Assistant */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Contract Assistant</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Ask questions about contract terms, clauses, or legal requirements
-            </p>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {/* Chat Messages */}
-            <ScrollArea className="h-[300px] pr-4">
-              <div className="space-y-4">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex ${
-                      msg.sender === "user" ? "justify-end" : "justify-start"
-                    }`}
-                  >
+        {/* STEP 2: Chat Assistant */}
+        {stage === "chat" && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Contract Details</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Answer our chatbot’s questions or ask it to add/remove clauses.
+                When you’re ready, generate your contract draft.
+              </p>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <ScrollArea className="h-[300px] pr-4">
+                <div className="space-y-4">
+                  {messages.map((msg) => (
                     <div
-                      className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                        msg.sender === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-foreground"
+                      key={msg.id}
+                      className={`flex ${
+                        msg.sender === "user" ? "justify-end" : "justify-start"
                       }`}
                     >
-                      <p className="text-sm">{msg.message}</p>
-                      <p className="text-xs opacity-70 mt-1">
-                        {new Date(msg.created_at).toLocaleTimeString()}
-                      </p>
+                      <div
+                        className={`max-w-[80%] rounded-lg px-4 py-2 ${
+                          msg.sender === "user"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-muted text-foreground"
+                        }`}
+                      >
+                        <p className="text-sm">{msg.message}</p>
+                        <p className="text-xs opacity-70 mt-1">
+                          {new Date(msg.created_at).toLocaleTimeString()}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
+                  ))}
+                  <div ref={chatEndRef} />
+                </div>
+              </ScrollArea>
+
+              <div className="flex gap-2">
+                <Input
+                  value={userInput}
+                  onChange={(e) => setUserInput(e.target.value)}
+                  onKeyDown={(e) =>
+                    e.key === "Enter" && !sending && handleSendMessage()
+                  }
+                  placeholder="Type your message..."
+                  className="flex-1"
+                />
+                <Button
+                  onClick={handleSendMessage}
+                  size="icon"
+                  disabled={sending}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
               </div>
-            </ScrollArea>
 
-            {/* Input Area */}
-            <div className="flex gap-2">
-              <Input
-                value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && !sending && handleSendMessage()}
-                placeholder="Ask a question about your contract..."
-                className="flex-1"
-              />
-              <Button onClick={handleSendMessage} size="icon" disabled={sending}>
-                <Send className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="mt-4 flex justify-between">
+                <Button
+                  variant="outline"
+                  onClick={() => setStage("form")}
+                  size="sm"
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={handleGenerateContract}
+                  disabled={generating}
+                  size="lg"
+                  className="bg-gold hover:bg-gold/90 text-background font-semibold px-8"
+                >
+                  <Sparkles className="h-5 w-5 mr-2" />
+                  {generating ? "Generating..." : "Generate Contract"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Contract Preview */}
-        {draft?.ai_draft_text && (
+        {/* STEP 3: Generated Contract Preview */}
+        {stage === "preview" && draft?.ai_draft_text && (
           <Card className="bg-white text-black">
             <CardHeader className="border-b">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-black">Generated Contract</CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleGenerateContract}
-                  className="border-gold text-gold hover:bg-gold hover:text-background"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Regenerate
-                </Button>
+                <CardTitle className="text-black">Contract Details</CardTitle>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setStage("chat")}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerateContract}
+                    className="border-gold text-gold hover:bg-gold hover:text-background"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Regenerate
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-8">

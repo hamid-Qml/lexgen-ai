@@ -1,45 +1,64 @@
+// src/pages/Profile.tsx
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getCurrentUser, saveUser } from '@/lib/storage';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Save } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
+import { userService } from '@/services/userService';
+
+type ProfileForm = {
+  full_name: string;
+  email: string;
+  company_name: string;
+  primary_jurisdiction: string;
+};
 
 export default function Profile() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(getCurrentUser());
-  const [formData, setFormData] = useState({
+  const { user, refreshMe } = useAuth();
+  const [formData, setFormData] = useState<ProfileForm>({
     full_name: '',
     email: '',
     company_name: '',
-    jurisdiction: '',
+    primary_jurisdiction: '',
   });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (user) {
       setFormData({
-        full_name: user.full_name,
+        full_name: user.full_name ?? '',
         email: user.email,
-        company_name: user.company_name || '',
-        jurisdiction: user.jurisdiction || '',
+        company_name: (user as any).company_name ?? '',
+        primary_jurisdiction: (user as any).primary_jurisdiction ?? '',
       });
     }
   }, [user]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!user) return;
+    setSaving(true);
+    try {
+      await userService.updateMe({
+        full_name: formData.full_name || null,
+        company_name: formData.company_name || null,
+        primary_jurisdiction: formData.primary_jurisdiction || null,
+      });
 
-    const updatedUser = {
-      ...user,
-      ...formData,
-    };
+      // refresh auth context + local cache
+      await refreshMe();
 
-    saveUser(updatedUser);
-    setUser(updatedUser);
-    toast.success('Profile updated successfully!');
+      toast.success('Profile updated successfully!');
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -71,7 +90,9 @@ export default function Profile() {
               <Input
                 id="full_name"
                 value={formData.full_name}
-                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                onChange={(e) =>
+                  setFormData((f) => ({ ...f, full_name: e.target.value }))
+                }
               />
             </div>
 
@@ -81,7 +102,8 @@ export default function Profile() {
                 id="email"
                 type="email"
                 value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                disabled
+                className="opacity-80 cursor-not-allowed"
               />
             </div>
 
@@ -90,24 +112,35 @@ export default function Profile() {
               <Input
                 id="company_name"
                 value={formData.company_name}
-                onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                onChange={(e) =>
+                  setFormData((f) => ({ ...f, company_name: e.target.value }))
+                }
                 placeholder="Optional"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="jurisdiction">Jurisdiction</Label>
+              <Label htmlFor="primary_jurisdiction">Primary Jurisdiction</Label>
               <Input
-                id="jurisdiction"
-                value={formData.jurisdiction}
-                onChange={(e) => setFormData({ ...formData, jurisdiction: e.target.value })}
-                placeholder="e.g., New South Wales, Victoria"
+                id="primary_jurisdiction"
+                value={formData.primary_jurisdiction}
+                onChange={(e) =>
+                  setFormData((f) => ({
+                    ...f,
+                    primary_jurisdiction: e.target.value,
+                  }))
+                }
+                placeholder="e.g., AU-NSW or New South Wales"
               />
             </div>
 
-            <Button onClick={handleSave} className="w-full bg-gold hover:bg-gold/90 text-background">
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="w-full bg-gold hover:bg-gold/90 text-background"
+            >
               <Save className="h-4 w-4 mr-2" />
-              Save Changes
+              {saving ? 'Saving…' : 'Save Changes'}
             </Button>
           </CardContent>
         </Card>
@@ -119,18 +152,22 @@ export default function Profile() {
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center py-2 border-b border-border">
               <span className="text-sm text-muted-foreground">Subscription Plan</span>
-              <span className="font-medium capitalize">{user?.subscription_tier}</span>
+              <span className="font-medium capitalize">
+                {(user as any)?.subscription_tier ?? 'free'}
+              </span>
             </div>
             <div className="flex justify-between items-center py-2 border-b border-border">
               <span className="text-sm text-muted-foreground">Onboarding Status</span>
               <span className="font-medium">
-                {user?.onboarding_complete ? 'Completed' : 'Incomplete'}
+                {(user as any)?.onboarding_completed ? 'Completed' : 'Incomplete'}
               </span>
             </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-sm text-muted-foreground">Member Since</span>
               <span className="font-medium">
-                {new Date().toLocaleDateString()}
+                {(user as any)?.created_at
+                  ? new Date((user as any).created_at).toLocaleDateString()
+                  : '—'}
               </span>
             </div>
           </CardContent>
