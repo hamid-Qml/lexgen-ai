@@ -353,8 +353,20 @@ export class ContractsService {
  * - No user input yet.
  * - Calls mlend to get an initial assistant message (greeting + first question).
  */
-    async startConversation(draftId: string, userId: string) {
+    async startConversation(
+        draftId: string,
+        userId: string,
+        answers?: Record<string, any>,
+    ) {
         const draft = await this.getDraftForUserOrThrow(draftId, userId);
+
+        if (answers && Object.keys(answers).length > 0) {
+            draft.questionnaire_state = {
+                ...(draft.questionnaire_state || {}),
+                ...answers,
+            };
+            await this.drafts.save(draft);
+        }
 
         // If there are already messages, just return the draft (idempotent)
         if (draft.chatMessages && draft.chatMessages.length > 0) {

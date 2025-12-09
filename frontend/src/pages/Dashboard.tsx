@@ -127,7 +127,7 @@ export default function Dashboard() {
           <CardContent>
             <Button
               onClick={() => navigate('/contracts/new')}
-              className="bg-gold hover:bg-gold/90 text-background font-semibold px-6"
+              className="bg-gold text-background font-semibold px-6 transition-all duration-200 hover:-translate-y-0.5 hover:bg-gold/90 hover:shadow-lg hover:shadow-gold/30 focus-visible:translate-y-0"
             >
               Start New Contract
             </Button>

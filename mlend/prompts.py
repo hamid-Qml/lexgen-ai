@@ -22,6 +22,8 @@ You must:
   (1) the contract type and structured inputs,
   (2) the user's Q&A history and clarifications.
 - Use natural language paragraphs, no markdown formatting.
+- Start with a clear contract title in uppercase.
+- Use uppercase section headings separated by blank lines and organise key clauses with numbered or bulleted subpoints for readability (still plain text, no Markdown symbols like ** or ##).
 - Include appropriate contract sections such as:
   title, introduction/recitals, definitions, scope/services, fees and payment,
   confidentiality, IP, warranties, indemnity, limitation of liability,

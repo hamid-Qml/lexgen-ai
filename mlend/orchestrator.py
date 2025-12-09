@@ -56,6 +56,39 @@ def answer_contract_chat(req: ContractChatRequest) -> ContractChatResponse:
       is sent as a *leading user message* so that `messages` is never empty.
     """
     clarifying = req.context.clarifying_questions or []
+    form_answers = req.context.form_answers or {}
+    chat_answers = req.context.chat_answers or {}
+    combined_answers = {**chat_answers, **form_answers}
+
+    answered_lines = []
+    missing_required = []
+
+    for question in req.context.template_questions:
+        key = question.key
+        value = combined_answers.get(key)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            if question.required:
+                missing_required.append(f"- {question.label} ({key})")
+            continue
+
+        if isinstance(value, list):
+            normalized_value = ", ".join(str(v).strip() for v in value if str(v).strip())
+        else:
+            normalized_value = str(value).strip()
+
+        if normalized_value:
+            answered_lines.append(f"- {question.label}: {normalized_value}")
+        elif question.required:
+            missing_required.append(f"- {question.label} ({key})")
+
+    answered_section = (
+        "\n".join(answered_lines) if answered_lines else "- None yet"
+    )
+    missing_section = (
+        "\n".join(missing_required)
+        if missing_required
+        else "- None – feel free to double-check key clauses."
+    )
 
     context_blob = f"""
 You are assisting with this contract:
@@ -70,17 +103,18 @@ Clarifying questions you should aim to cover (adapt wording/order as needed):
 Template questions (keys only):
 {[q.key for q in req.context.template_questions]}
 
-Form answers (explicit from UI):
-{req.context.form_answers}
+Details already collected (do NOT ask these again):
+{answered_section}
 
-Chat answers (previously inferred from conversation):
-{req.context.chat_answers}
+Outstanding required details that still need confirmation:
+{missing_section}
 
 Remember:
 - Ask ONE clear, specific question at a time.
 - Prioritise clarifying questions that have not been covered yet.
 - Do NOT draft the full contract text here.
 - Keep messages short, conversational, and in plain text (no markdown).
+- When the user says they are done or do not want to provide more info, confirm their intent and explain which details remain missing and how the contract will handle them (e.g. placeholders or assumptions).
 """
 
     leading_user_message = (

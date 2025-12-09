@@ -15,6 +15,7 @@ import { ContractsService } from './contracts.service';
 import { CreateContractDraftDto } from './dto/create-contract-draft.dto';
 import { CreateChatMessageDto } from './dto/create-chat-message.dto';
 import { GenerateContractDto } from './dto/generate-contract.dto';
+import { StartConversationDto } from './dto/start-conversation.dto';
 
 @Controller('contracts')
 @UseGuards(AuthGuard('jwt'))
@@ -68,10 +69,14 @@ export class ContractsController {
 
   // start conversation endpoint
   @Post(':id/start')
-  startConversation(@Req() req: any, @Param('id') id: string) {
+  startConversation(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: StartConversationDto,
+  ) {
     const userId = req.user.userId;
     this.logger.debug(`startConversation for draft ${id} by user ${userId}`);
-    return this.contracts.startConversation(id, userId);
+    return this.contracts.startConversation(id, userId, body?.answers);
   }
 
   // generate contract endpoint

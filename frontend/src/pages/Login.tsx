@@ -6,12 +6,13 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useNavigate, Link } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
-import { FileText } from 'lucide-react';
+import { Eye, EyeOff, FileText } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const navigate = useNavigate();
@@ -71,16 +72,25 @@ const Login = () => {
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 relative">
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
-                type="password"
-                placeholder="••••••••"
+                type={showPassword ? 'text' : 'password'}
+                placeholder={showPassword ? 'your-password' : '••••••••'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                className="pr-10"
                 required
               />
+              <button
+                type="button"
+                className="absolute right-3 top-9 text-muted-foreground hover:text-foreground transition"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
 
             <Button

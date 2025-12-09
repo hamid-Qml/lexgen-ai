@@ -32,9 +32,10 @@ export const contractService = {
   },
 
   // start the AI conversation (initial assistant message)
-  async startChat(id: string) {
+  async startChat(id: string, body?: { answers?: Record<string, any> }) {
     return api(`/contracts/${id}/start`, {
       method: "POST",
+      body,
     });
   },
 
