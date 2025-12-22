@@ -1,27 +1,15 @@
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { FileText, Sparkles, Shield, Zap } from 'lucide-react';
+import TopBar from '@/components/topbar';
 
 const Landing = () => {
   const navigate = useNavigate();
 
   return (
     <div className="min-h-screen bg-background">
-      <nav className="border-b border-border">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold text-foreground">LEXY</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => navigate('/login')}>
-              Login
-            </Button>
-            <Button className="bg-gold text-gold-foreground hover:bg-gold/90" onClick={() => navigate('/signup')}>
-              Get Started
-            </Button>
-          </div>
-        </div>
+      <nav>
+        <TopBar />
       </nav>
 
       <main className="container mx-auto px-4 py-20">
@@ -33,8 +21,8 @@ const Landing = () => {
             Create professional legal contracts in minutes with our intelligent assistant.
             170+ contract types, tailored to Australian law.
           </p>
-          <Button 
-            size="lg" 
+          <Button
+            size="lg"
             className="bg-gold text-gold-foreground hover:bg-gold/90 text-lg px-8"
             onClick={() => navigate('/signup')}
           >
