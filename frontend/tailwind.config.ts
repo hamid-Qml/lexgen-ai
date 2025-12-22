@@ -26,6 +26,7 @@ export default {
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))",
+          ["button-bg"]: "hsl(var(--secondary-button-bg))",
         },
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
