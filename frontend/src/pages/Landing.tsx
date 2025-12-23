@@ -6,6 +6,7 @@ import Hero from "@/components/hero";
 import Trust from "@/components/trust";
 import Stats from "@/components/stats";
 import FeaturedVideo from "@/components/featured_video";
+import Footer from "@/components/footer";
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ const Landing = () => {
         <Trust />
         <Stats />
         <FeaturedVideo />
+        <Footer />
       </div>
     </div>
   );
