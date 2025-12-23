@@ -4,6 +4,7 @@ import { FileText, Sparkles, Shield, Zap } from "lucide-react";
 import TopBar from "@/components/topbar";
 import Hero from "@/components/hero";
 import Trust from "@/components/trust";
+import Stats from "@/components/stats";
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ const Landing = () => {
         </nav>
         <Hero />
         <Trust />
+        <Stats />
       </div>
     </div>
   );

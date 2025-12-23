@@ -7,39 +7,40 @@ All colors MUST be HSL.
 */
 
 @layer base {
-  :root {
-    --background: 202 79% 7%;
-    --foreground: 0 0% 100%;
-    --card: 222 47% 14%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 14%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217 91% 60%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 165 33% 26%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 222 47% 20%;
-    --muted-foreground: 215 20% 65%;
-    --accent: 188 94% 43%;
-    --accent-foreground: 222 47% 11%;
-    --gold: 45 93% 58%;
-    --gold-foreground: 222 47% 11%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 222 47% 20%;
-    --input: 222 47% 20%;
-    --ring: 217 91% 60%;
-    --radius: 0.5rem;
-    --secondary-button-bg: 240 1% 33%;
-  }
+    :root {
+        --background: 202 79% 7%;
+        --foreground: 0 0% 100%;
+        --card: 0 0% 7%;
+        --card-foreground: 210 40% 98%;
+        --card-border: 0 0% 13%;
+        --popover: 222 47% 14%;
+        --popover-foreground: 210 40% 98%;
+        --primary: 217 91% 60%;
+        --primary-foreground: 210 40% 98%;
+        --secondary: 165 33% 26%;
+        --secondary-foreground: 0 0% 100%;
+        --muted: 222 47% 20%;
+        --muted-foreground: 215 20% 65%;
+        --accent: 188 94% 43%;
+        --accent-foreground: 222 47% 11%;
+        --gold: 45 93% 58%;
+        --gold-foreground: 222 47% 11%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 210 40% 98%;
+        --border: 222 47% 20%;
+        --input: 222 47% 20%;
+        --ring: 217 91% 60%;
+        --radius: 0.5rem;
+        --secondary-button-bg: 240 1% 33%;
+    }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+    * {
+        @apply border-border;
+    }
 
-  body {
-    @apply bg-background text-foreground;
-  }
+    body {
+        @apply bg-background text-foreground;
+    }
 }

@@ -1,6 +1,6 @@
 export default function Trust() {
   return (
-    <div className="flex flex-col items-center justify-between  text-white mt-24 py-24 px-12 gap-12">
+    <div className="flex flex-col items-center justify-between  text-white mt-24 py-24 px-12 gap-12 mb-24">
       <div className="felx flex-col items-center justify-center gap-3">
         <h2 className="font-medium text-[48px]">
           Trusted by Growing Businesses
