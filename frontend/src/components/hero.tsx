@@ -7,11 +7,11 @@ import ShieldIcon from "../../public/ShieldCheck.svg";
 
 export default function Hero() {
   return (
-    <div className="flex items-center justify-center relative mt-28">
-      <div className="absolute h-[798px]">
-        <img src={HeroBg} />
+    <div className="flex items-center justify-center relative mt-14">
+      <div className="absolute inset-0">
+        <img src={HeroBg} className="w-full h-full object-fit" />
       </div>
-      <div className="flex flex-col items-center w-[834px] gap-12 px-2 py-4 z-10">
+      <div className="flex flex-col items-center w-[834px] mt-14 gap-12 px-2 py-4 z-10">
         <div className="flex flex-col items-center justify-center gap-4">
           <h1 className="text-[64px] font-medium">
             Contract Review in <br />
