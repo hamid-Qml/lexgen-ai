@@ -8,6 +8,7 @@ import Stats from "@/components/stats";
 import FeaturedVideo from "@/components/featured_video";
 import Footer from "@/components/footer";
 import Action from "@/components/action";
+import Benefits from "@/components/benefits";
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -24,6 +25,7 @@ const Landing = () => {
           <Stats />
           <Action />
           <FeaturedVideo />
+          <Benefits />
         </div>
       </div>
       <Footer />
