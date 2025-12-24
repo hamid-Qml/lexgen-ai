@@ -9,6 +9,7 @@ import FeaturedVideo from "@/components/featured_video";
 import Footer from "@/components/footer";
 import Action from "@/components/action";
 import Benefits from "@/components/benefits";
+import FAQs from "@/components/faq";
 
 const Landing = () => {
   const navigate = useNavigate();
@@ -26,6 +27,7 @@ const Landing = () => {
           <Action />
           <FeaturedVideo />
           <Benefits />
+          <FAQs />
         </div>
       </div>
       <Footer />
