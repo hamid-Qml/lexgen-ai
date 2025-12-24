@@ -42,6 +42,21 @@ export function initStripePrices(prices: {
   BUSINESS_MONTHLY: string;
   BUSINESS_YEARLY: string;
 }) {
+  const entries = Object.entries(prices);
+  const missing = entries.filter(
+    ([, value]) => typeof value !== 'string' || value.trim() === '',
+  );
+  if (missing.length) {
+    throw new Error(
+      `Missing Stripe price IDs: ${missing.map(([key]) => key).join(', ')}`,
+    );
+  }
+  const values = entries.map(([, value]) => value.trim());
+  const unique = new Set(values);
+  if (unique.size !== values.length) {
+    throw new Error('Stripe price IDs must be unique');
+  }
+
   STRIPE_PRICE_IDS.pro_monthly = prices.PRO_MONTHLY;
   STRIPE_PRICE_IDS.pro_yearly = prices.PRO_YEARLY;
   STRIPE_PRICE_IDS.business_monthly = prices.BUSINESS_MONTHLY;

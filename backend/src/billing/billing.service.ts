@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import Stripe from 'stripe';
 import { Subscription } from './entities/subscription.entity';
 import { User, SubscriptionTier } from 'src/users/entities/user.entity';
@@ -58,7 +58,7 @@ export class BillingService {
 
     this.stripe = new Stripe(secretKey, {
       // pick the actual version you pin to in Stripe dashboard
-      apiVersion: '2025-11-17.clover',
+      apiVersion: '2025-12-15.clover',
     });
 
     this.appBaseUrl =
@@ -82,6 +82,22 @@ export class BillingService {
         `createCheckoutSession: user not found for userId=${userId}`,
       );
       throw new BadRequestException('User not found');
+    }
+
+    const activeSub = await this.subscriptionsRepo.findOne({
+      where: {
+        user: { id: userId },
+        status: In(['active', 'trialing', 'past_due']),
+      },
+      order: { start_date: 'DESC' },
+    });
+    if (activeSub) {
+      this.logger.warn(
+        `createCheckoutSession: user ${userId} already has an active subscription (${activeSub.id})`,
+      );
+      throw new BadRequestException(
+        'User already has an active subscription',
+      );
     }
 
     const priceId = STRIPE_PLAN_KEY_TO_PRICE_ID[planKey];
@@ -415,8 +431,10 @@ export class BillingService {
   private getCurrentPeriodEndFromSubscription(
     stripeSub: Stripe.Subscription,
   ): Date | null {
-    const firstItem: any = stripeSub.items?.data?.[0];
-    const ts: number | undefined = firstItem?.current_period_end;
+    const ts =
+      typeof stripeSub.current_period_end === 'number'
+        ? stripeSub.current_period_end
+        : (stripeSub.items?.data?.[0] as any)?.current_period_end;
 
     if (!ts || typeof ts !== 'number') {
       this.logger.debug(
