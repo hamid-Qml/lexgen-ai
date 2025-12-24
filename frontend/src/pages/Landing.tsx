@@ -13,19 +13,21 @@ const Landing = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="flex items-center justify-center w-full bg-background">
-      <div className="w-full bg-background max-w-[3096px] min-w-[1080px]">
-        <nav>
-          <TopBar />
-        </nav>
-        <Hero />
-        <Trust />
-        <Stats />
-        <Action />
-        <FeaturedVideo />
-        <Footer />
+    <>
+      <div className="flex items-center justify-center w-full bg-background">
+        <div className="w-full bg-background max-w-[1440px] min-w-[1080px]">
+          <nav>
+            <TopBar />
+          </nav>
+          <Hero />
+          <Trust />
+          <Stats />
+          <Action />
+          <FeaturedVideo />
+        </div>
       </div>
-    </div>
+      <Footer />
+    </>
   );
 };
 
