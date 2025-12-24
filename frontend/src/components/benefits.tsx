@@ -1,6 +1,6 @@
 export default function Benefits() {
   return (
-    <div className="flex flex-row px-12 py-24 gap-12 text-white ">
+    <div className="flex flex-row px-12 py-24 gap-12 text-white mb-24">
       <div className="flex flex-col max-w-[626px]">
         <h2 className="font-medium text-[48px]">Exclusive Founder Benefits</h2>
         <p className="text-[18px] text-white/50">
