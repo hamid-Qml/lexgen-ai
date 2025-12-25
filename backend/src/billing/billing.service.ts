@@ -26,6 +26,14 @@ export class BillingService {
   private readonly stripe: Stripe;
   private readonly appBaseUrl: string;
 
+  // Shape returned to the frontend for checkout/upgrade flows
+  private readonly checkoutResponse = (data: {
+    action: 'checkout' | 'portal' | 'updated';
+    url?: string | null;
+    message?: string;
+    updatedTier?: BillingTier;
+  }) => data;
+
   constructor(
     @InjectRepository(Subscription)
     private readonly subscriptionsRepo: Repository<Subscription>,
@@ -58,7 +66,7 @@ export class BillingService {
 
     this.stripe = new Stripe(secretKey, {
       // pick the actual version you pin to in Stripe dashboard
-      apiVersion: '2025-12-15.clover',
+      apiVersion: '2025-11-17.clover',
     });
 
     this.appBaseUrl =
@@ -84,22 +92,6 @@ export class BillingService {
       throw new BadRequestException('User not found');
     }
 
-    const activeSub = await this.subscriptionsRepo.findOne({
-      where: {
-        user: { id: userId },
-        status: In(['active', 'trialing', 'past_due']),
-      },
-      order: { start_date: 'DESC' },
-    });
-    if (activeSub) {
-      this.logger.warn(
-        `createCheckoutSession: user ${userId} already has an active subscription (${activeSub.id})`,
-      );
-      throw new BadRequestException(
-        'User already has an active subscription',
-      );
-    }
-
     const priceId = STRIPE_PLAN_KEY_TO_PRICE_ID[planKey];
     if (!priceId) {
       console.log(STRIPE_PLAN_KEY_TO_PRICE_ID);
@@ -107,6 +99,113 @@ export class BillingService {
         `createCheckoutSession: unknown planKey="${planKey}" from user ${userId}`,
       );
       throw new BadRequestException('Unknown plan');
+    }
+    const targetTier = STRIPE_PRICE_TO_TIER[priceId] ?? planKey;
+
+    let activeSub = await this.subscriptionsRepo.findOne({
+      where: {
+        user: { id: userId },
+        status: In(['active', 'trialing', 'past_due']),
+      },
+      order: { start_date: 'DESC' },
+    });
+    if (activeSub && !activeSub.stripe_subscription_id) {
+      this.logger.error(
+        `Active subscription ${activeSub.id} for user ${userId} is missing a stripe_subscription_id`,
+      );
+
+      const recovered = await this.tryRecoverSubscriptionFromStripe(user);
+      if (recovered) {
+        this.logger.log(
+          `Recovered Stripe subscription ${recovered.id} for user ${userId}, refreshing local record`,
+        );
+        await this.upsertFromStripeSubscription(recovered, user);
+        activeSub = await this.getActiveSubscriptionForUser(userId);
+      } else {
+        this.logger.warn(
+          `No Stripe subscription found for user ${userId}, marking local subscription inactive and proceeding to checkout`,
+        );
+        activeSub.status = 'inactive';
+        await this.subscriptionsRepo.save(activeSub);
+        activeSub = null;
+      }
+    }
+
+    if (activeSub) {
+      if (!activeSub.stripe_subscription_id) {
+        this.logger.error(
+          `Active subscription ${activeSub.id} for user ${userId} is missing a stripe_subscription_id`,
+        );
+        throw new BadRequestException(
+          'Subscription record is missing Stripe data. Please contact support.',
+        );
+      }
+
+      try {
+        const stripeSub = await this.stripe.subscriptions.retrieve(
+          activeSub.stripe_subscription_id,
+          { expand: ['items.data.price'] },
+        );
+        const primaryItem = stripeSub.items?.data?.[0];
+        const currentPriceId = primaryItem?.price?.id;
+
+        if (currentPriceId === priceId) {
+          this.logger.warn(
+            `createCheckoutSession: user ${userId} is already on desired price ${priceId}; sending to portal`,
+          );
+          const portal = await this.createPortalSession(userId);
+          return this.checkoutResponse({
+            action: 'portal',
+            url: portal.url,
+            message: 'You are already on this plan. Manage billing in the portal.',
+          });
+        }
+
+        if (!primaryItem?.id) {
+          this.logger.error(
+            `Stripe subscription ${stripeSub.id} has no items to update`,
+          );
+          throw new BadRequestException(
+            'Unable to update your subscription. Please contact support.',
+          );
+        }
+
+        this.logger.log(
+          `Updating Stripe subscription ${stripeSub.id} for user ${user.id} to priceId=${priceId}`,
+        );
+
+        const updatedSub = await this.stripe.subscriptions.update(
+          stripeSub.id,
+          {
+            cancel_at_period_end: false,
+            proration_behavior: 'create_prorations',
+            items: [
+              {
+                id: primaryItem.id,
+                price: priceId,
+                quantity: 1,
+              },
+            ],
+          },
+        );
+
+        await this.upsertFromStripeSubscription(updatedSub, user);
+
+        return this.checkoutResponse({
+          action: 'updated',
+          url: null,
+          message: `Subscription updated to ${targetTier}`,
+          updatedTier: targetTier,
+        });
+      } catch (err: any) {
+        this.logger.error(
+          `Failed to update existing subscription ${activeSub.stripe_subscription_id} for user ${user.id}`,
+          err.stack || err.message,
+        );
+        throw new InternalServerErrorException(
+          'Failed to update existing subscription',
+        );
+      }
     }
 
     // 1. Ensure Stripe customer exists
@@ -148,7 +247,10 @@ export class BillingService {
         `Stripe checkout session created – sessionId=${session.id}, userId=${user.id}, planKey=${planKey}, priceId=${priceId}`,
       );
 
-      return { url: session.url };
+      return this.checkoutResponse({
+        action: 'checkout',
+        url: session.url,
+      });
     } catch (err: any) {
       this.logger.error(
         `Error creating Stripe checkout session for user ${user.id}, planKey=${planKey}`,
@@ -174,7 +276,7 @@ export class BillingService {
     try {
       const portalSession = await this.stripe.billingPortal.sessions.create({
         customer: user.stripe_customer_id,
-        return_url: `${this.appBaseUrl}/account`,
+        return_url: `${this.appBaseUrl}/subscriptions`,
       });
 
       this.logger.log(
@@ -282,7 +384,10 @@ export class BillingService {
       `Fetching active subscription from DB for userId=${userId}`,
     );
     return this.subscriptionsRepo.findOne({
-      where: { user: { id: userId } },
+      where: {
+        user: { id: userId },
+        status: In(['active', 'trialing', 'past_due']),
+      },
       order: { start_date: 'DESC' },
     });
   }
@@ -431,9 +536,12 @@ export class BillingService {
   private getCurrentPeriodEndFromSubscription(
     stripeSub: Stripe.Subscription,
   ): Date | null {
+    const legacySub = stripeSub as Stripe.Subscription & {
+      current_period_end?: number;
+    };
     const ts =
-      typeof stripeSub.current_period_end === 'number'
-        ? stripeSub.current_period_end
+      typeof legacySub.current_period_end === 'number'
+        ? legacySub.current_period_end
         : (stripeSub.items?.data?.[0] as any)?.current_period_end;
 
     if (!ts || typeof ts !== 'number') {
@@ -456,6 +564,38 @@ export class BillingService {
         return SubscriptionTier.BUSINESS;
       default:
         return SubscriptionTier.FREE;
+    }
+  }
+
+  private async tryRecoverSubscriptionFromStripe(
+    user: User,
+  ): Promise<Stripe.Subscription | null> {
+    if (!user.stripe_customer_id) {
+      return null;
+    }
+
+    try {
+      const subs = await this.stripe.subscriptions.list({
+        customer: user.stripe_customer_id,
+        status: 'all',
+        limit: 10,
+      });
+
+      const candidate = subs.data
+        .filter((s) =>
+          ['active', 'trialing', 'past_due', 'unpaid', 'incomplete'].includes(
+            s.status,
+          ),
+        )
+        .sort((a, b) => b.created - a.created)[0];
+
+      return candidate ?? null;
+    } catch (err: any) {
+      this.logger.error(
+        `Failed to recover Stripe subscription for user ${user.id}`,
+        err.stack || err.message,
+      );
+      return null;
     }
   }
 }

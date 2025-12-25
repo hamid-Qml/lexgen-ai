@@ -23,9 +23,13 @@ import {
 const PLAN_KEYS = {
   PRO_MONTHLY: import.meta.env.VITE_PLAN_PRO_MONTHLY ?? "pro_monthly",
   PRO_YEARLY: import.meta.env.VITE_PLAN_PRO_YEARLY ?? "pro_yearly",
+  BUSINESS_MONTHLY:
+    import.meta.env.VITE_PLAN_BUSINESS_MONTHLY ?? "business_monthly",
+  BUSINESS_YEARLY:
+    import.meta.env.VITE_PLAN_BUSINESS_YEARLY ?? "business_yearly",
 };
 
-type UiPlanId = "free" | "pro";
+type UiPlanId = "free" | "pro" | "business";
 
 const PLANS: {
   id: UiPlanId;
@@ -33,6 +37,7 @@ const PLANS: {
   price: string;
   period: string;
   badge?: string;
+  planKey?: string;
   features: string[];
 }[] = [
   {
@@ -50,16 +55,28 @@ const PLANS: {
   {
     id: "pro",
     name: "Professional",
-    price: "$29",
+    price: "$449",
     period: "per month",
     badge: "Most Popular",
+    planKey: PLAN_KEYS.PRO_MONTHLY,
     features: [
-      "Unlimited contracts",
+      "20 contracts per month",
       "All 170+ contract types",
       "Priority support",
       "PDF & DOCX downloads (no watermark)",
       "Advanced AI assistance",
-      "Saved questionnaires",
+    ],
+  },
+  {
+    id: "business",
+    name: "Business",
+    price: "$799",
+    period: "per month",
+    badge: "For teams",
+    planKey: PLAN_KEYS.BUSINESS_MONTHLY,
+    features: [
+      "Unlimited contracts",
+      "Everything in the Pro plan",
     ],
   },
 ];
@@ -72,6 +89,11 @@ export default function Subscriptions() {
   const [loading, setLoading] = useState(false);
 
   const effectiveTier = summary?.tier ?? "free"; // matches BillingTier
+  const currentPlanId: UiPlanId = effectiveTier.startsWith("business")
+    ? "business"
+    : effectiveTier.startsWith("pro")
+    ? "pro"
+    : "free";
 
   const loadSummary = async () => {
     try {
@@ -87,17 +109,34 @@ export default function Subscriptions() {
     loadSummary();
   }, []);
 
-  const handleUpgradePro = async () => {
+  const handlePlanCheckout = async (planKey: string, planLabel: string) => {
     setLoading(true);
     try {
-      const { url } = await subscriptionService.startCheckout(
-        PLAN_KEYS.PRO_MONTHLY
-      );
-      if (!url) throw new Error("No checkout URL returned");
-      window.location.href = url;
+      const res = await subscriptionService.startCheckout(planKey);
+
+      if (res.action === "checkout") {
+        if (!res.url) throw new Error("No checkout URL returned");
+        window.location.href = res.url;
+        return;
+      }
+
+      if (res.action === "portal") {
+        if (!res.url) throw new Error("No portal URL returned");
+        toast(res.message ?? "Opening billing portal...");
+        window.location.href = res.url;
+        return;
+      }
+
+      if (res.action === "updated") {
+        toast.success(res.message ?? `${planLabel} activated`);
+        await loadSummary();
+        return;
+      }
+
+      throw new Error("Unexpected billing response");
     } catch (e: any) {
       console.error("Upgrade checkout failed", e);
-      toast.error(e?.message || "Failed to start checkout.");
+      toast.error(e?.message || "Failed to update subscription.");
     } finally {
       setLoading(false);
     }
@@ -117,23 +156,16 @@ export default function Subscriptions() {
     }
   };
 
-  const isPaidTier = effectiveTier !== "free";
+  const isPaidTier = currentPlanId !== "free";
 
   const isCurrentForPlan = (planId: UiPlanId) => {
-    if (planId === "free") {
-      return effectiveTier === "free";
-    }
-    // Treat any pro_* as Pro
-    if (planId === "pro") {
-      return effectiveTier.startsWith("pro_");
-    }
-    return false;
+    return currentPlanId === planId;
   };
 
-  const renderPlanButton = (planId: UiPlanId) => {
-    const isCurrent = isCurrentForPlan(planId);
+  const renderPlanButton = (plan: (typeof PLANS)[number]) => {
+    const isCurrent = isCurrentForPlan(plan.id);
 
-    if (planId === "free") {
+    if (plan.id === "free") {
       if (isCurrent) {
         return (
           <Button className="w-full" variant="outline" disabled>
@@ -161,7 +193,6 @@ export default function Subscriptions() {
       );
     }
 
-    // Pro plan
     if (isCurrent) {
       return (
         <Button
@@ -174,13 +205,22 @@ export default function Subscriptions() {
       );
     }
 
+    if (!plan.planKey) return null;
+
+    const label =
+      plan.id === "business"
+        ? "Upgrade to Business"
+        : currentPlanId === "business"
+        ? "Switch to Pro"
+        : "Upgrade to Pro";
+
     return (
       <Button
         className="w-full bg-gold hover:bg-gold/90 text-background"
         disabled={loading}
-        onClick={handleUpgradePro}
+        onClick={() => handlePlanCheckout(plan.planKey!, plan.name)}
       >
-        Upgrade to Pro
+        {label}
       </Button>
     );
   };
@@ -289,7 +329,7 @@ export default function Subscriptions() {
                     ))}
                   </ul>
 
-                  {renderPlanButton(plan.id)}
+                  {renderPlanButton(plan)}
                 </CardContent>
               </Card>
             );

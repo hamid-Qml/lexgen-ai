@@ -1,37 +1,36 @@
-// src/pages/Onboarding.tsx
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Checkbox } from '@/components/ui/checkbox';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'; // if you already have this
-import { getCurrentUser, saveUser } from '@/lib/storage';
-import { useToast } from '@/hooks/use-toast';
-import { onboardingService } from '@/services/onboardingService';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { getCurrentUser, saveUser } from "@/lib/storage";
+import { useToast } from "@/hooks/use-toast";
+import { onboardingService } from "@/services/onboardingService";
+import AuthShell from "@/components/AuthShell";
 
-const CATEGORIES = ['Commercial', 'Employment', 'Technology', 'Family Law', 'Real Estate'];
+const CATEGORIES = ["Commercial", "Employment", "Technology", "Family Law", "Real Estate"];
 
 // Map display labels → backend enum values
 const CATEGORY_MAP: Record<string, string> = {
-  Commercial: 'commercial',
-  Employment: 'employment',
-  Technology: 'technology',
-  'Family Law': 'family_law',
+  Commercial: "commercial",
+  Employment: "employment",
+  Technology: "technology",
+  "Family Law": "family_law",
   // For now, map Real Estate to commercial (or adjust backend enum later)
-  'Real Estate': 'commercial',
+  "Real Estate": "commercial",
 };
 
 const Onboarding = () => {
   const currentUser = getCurrentUser();
-  const [step, setStep] = useState(1);
-  const [companyName, setCompanyName] = useState(currentUser?.company_name ?? '');
-  const [jurisdiction, setJurisdiction] = useState('');
+  const [companyName, setCompanyName] = useState(currentUser?.company_name ?? "");
+  const [jurisdiction, setJurisdiction] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-  const [intendedUsage, setIntendedUsage] = useState<'personal' | 'business' | 'legal_practitioner'>('business');
+  const [intendedUsage, setIntendedUsage] = useState<"personal" | "business" | "legal_practitioner">("business");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedDisclaimer, setAcceptedDisclaimer] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -42,19 +41,19 @@ const Onboarding = () => {
   // Redirect unauthenticated users
   useEffect(() => {
     if (!currentUser) {
-      navigate('/login');
+      navigate("/login");
       return;
     }
   }, [currentUser, navigate]);
 
-  // Optionally prefill from backend status (in case user refreshes midway)
+  // Prefill from backend status if available
   useEffect(() => {
     const load = async () => {
       if (!currentUser) return;
       try {
         const status = await onboardingService.getStatus();
         if (status.onboarding_completed) {
-          navigate('/dashboard');
+          navigate("/dashboard");
           return;
         }
 
@@ -62,9 +61,8 @@ const Onboarding = () => {
           setJurisdiction(status.primary_jurisdiction);
         }
         if (status.contract_categories_of_interest?.length) {
-          // map backend enums back to UI labels where possible
           const selected = CATEGORIES.filter((label) =>
-            status.contract_categories_of_interest!.includes(CATEGORY_MAP[label])
+            status.contract_categories_of_interest!.includes(CATEGORY_MAP[label]),
           );
           setSelectedCategories(selected);
         }
@@ -72,8 +70,7 @@ const Onboarding = () => {
           setIntendedUsage(status.intended_usage);
         }
       } catch (e) {
-        // silently ignore – first time users will just see empty form
-        console.error('Failed to load onboarding status', e);
+        console.error("Failed to load onboarding status", e);
       } finally {
         setLoading(false);
       }
@@ -85,19 +82,9 @@ const Onboarding = () => {
     return null;
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <p className="text-muted-foreground">Loading your setup…</p>
-      </div>
-    );
-  }
-
   const handleCategoryToggle = (category: string) => {
     setSelectedCategories((prev) =>
-      prev.includes(category)
-        ? prev.filter((c) => c !== category)
-        : [...prev, category]
+      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category],
     );
   };
 
@@ -105,193 +92,190 @@ const Onboarding = () => {
     if (!jurisdiction || selectedCategories.length === 0) return;
     if (!acceptedTerms || !acceptedDisclaimer) return;
 
-    const backendCategories = selectedCategories
-      .map((label) => CATEGORY_MAP[label])
-      .filter(Boolean);
+    const backendCategories = selectedCategories.map((label) => CATEGORY_MAP[label]).filter(Boolean);
 
     try {
-      await onboardingService.complete({
+      const result = await onboardingService.complete({
         full_name: currentUser.full_name ?? undefined,
         company_name: companyName || undefined,
-        primary_jurisdiction: jurisdiction, // backend only validates string, so "New South Wales" is fine for now
+        primary_jurisdiction: jurisdiction,
         contract_categories_of_interest: backendCategories,
         intended_usage: intendedUsage,
         accepted_terms: acceptedTerms,
         accepted_disclaimer: acceptedDisclaimer,
-        // optional fields not collected in this lightweight UI:
-        abn_acn: undefined,
-        company_address: undefined,
-        industry: undefined,
       });
 
-      // Keep local stored user roughly in sync
-      const updatedUser = {
-        ...currentUser,
-        company_name: companyName || currentUser.company_name,
-        primary_jurisdiction: jurisdiction,
-        contract_categories_of_interest: backendCategories,
-        intended_usage: intendedUsage,
-        onboarding_completed: true,
-      };
-      saveUser(updatedUser);
-
+      saveUser(result.user);
       toast({
-        title: 'Setup complete!',
-        description: "You're all set to create your first contract.",
+        title: "Onboarding complete",
+        description: "Your workspace is tailored to your needs.",
       });
-
-      navigate('/dashboard');
+      navigate("/dashboard");
     } catch (e: any) {
-      console.error(e);
       toast({
-        title: 'Error saving setup',
-        description: e?.message || 'Please try again.',
-        variant: 'destructive',
+        title: "Could not complete onboarding",
+        description: e?.message || "Please try again.",
+        variant: "destructive",
       });
     }
   };
 
-  const canGoNext = !!jurisdiction;
-  const canComplete =
-    selectedCategories.length > 0 && acceptedTerms && acceptedDisclaimer;
-
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <CardTitle>Let's Get You Started</CardTitle>
-          <CardDescription>Step {step} of 2</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {step === 1 && (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="companyName">Company Name (Optional)</Label>
-                <Input
-                  id="companyName"
-                  type="text"
-                  placeholder="Your company name"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                />
+    <AuthShell
+      eyebrow="Onboarding"
+      title="Tell us about your company"
+      description="We’ll tailor templates, recommendations, and guardrails to your needs."
+    >
+      {loading ? (
+        <div className="min-h-[50vh] flex items-center justify-center">
+          <p className="text-muted-foreground">Loading your setup…</p>
+        </div>
+      ) : (
+        <div className="grid gap-6">
+          <Card className="bg-card/70 border border-white/10 backdrop-blur">
+            <CardHeader>
+              <CardTitle>Company basics</CardTitle>
+              <CardDescription>Share your company details to personalize your workspace.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="companyName">Company name</Label>
+                  <Input
+                    id="companyName"
+                    placeholder="Lexy Pty Ltd"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="jurisdiction">Primary jurisdiction</Label>
+                  <Select value={jurisdiction} onValueChange={setJurisdiction}>
+                    <SelectTrigger id="jurisdiction">
+                      <SelectValue placeholder="Select jurisdiction" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NSW">NSW</SelectItem>
+                      <SelectItem value="VIC">VIC</SelectItem>
+                      <SelectItem value="QLD">QLD</SelectItem>
+                      <SelectItem value="WA">WA</SelectItem>
+                      <SelectItem value="SA">SA</SelectItem>
+                      <SelectItem value="TAS">TAS</SelectItem>
+                      <SelectItem value="NT">NT</SelectItem>
+                      <SelectItem value="ACT">ACT</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="jurisdiction">Primary Jurisdiction</Label>
-                <Select value={jurisdiction} onValueChange={setJurisdiction}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select jurisdiction" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Australia">Australia</SelectItem>
-                    <SelectItem value="New South Wales">New South Wales</SelectItem>
-                    <SelectItem value="Victoria">Victoria</SelectItem>
-                    <SelectItem value="Queensland">Queensland</SelectItem>
-                    <SelectItem value="South Australia">South Australia</SelectItem>
-                    <SelectItem value="Western Australia">Western Australia</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>How will you mainly use Lexy?</Label>
+                <Label>Intended usage</Label>
                 <RadioGroup
                   value={intendedUsage}
                   onValueChange={(val: any) => setIntendedUsage(val)}
-                  className="grid grid-cols-1 md:grid-cols-3 gap-2"
+                  className="grid grid-cols-1 sm:grid-cols-3 gap-3"
                 >
-                  <div className="flex items-center space-x-2">
+                  <label className="flex items-center gap-2 rounded-md border border-border bg-background/60 px-3 py-2">
                     <RadioGroupItem id="usage-personal" value="personal" />
-                    <Label htmlFor="usage-personal">Personal</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
+                    <span>Personal</span>
+                  </label>
+                  <label className="flex items-center gap-2 rounded-md border border-border bg-background/60 px-3 py-2">
                     <RadioGroupItem id="usage-business" value="business" />
-                    <Label htmlFor="usage-business">Business</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem
-                      id="usage-legal"
-                      value="legal_practitioner"
-                    />
-                    <Label htmlFor="usage-legal">Legal practitioner</Label>
-                  </div>
+                    <span>Business</span>
+                  </label>
+                  <label className="flex items-center gap-2 rounded-md border border-border bg-background/60 px-3 py-2">
+                    <RadioGroupItem id="usage-legal" value="legal_practitioner" />
+                    <span>Legal practitioner</span>
+                  </label>
                 </RadioGroup>
               </div>
+            </CardContent>
+          </Card>
 
-              <Button
-                onClick={() => setStep(2)}
-                className="w-full bg-gold text-gold-foreground hover:bg-gold/90"
-                disabled={!canGoNext}
-              >
-                Continue
-              </Button>
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-6">
-              <div className="space-y-4">
-                <Label>What types of contracts are you interested in?</Label>
-                {CATEGORIES.map((category) => (
-                  <div key={category} className="flex items-center space-x-2">
+          <Card className="bg-card/70 border border-white/10 backdrop-blur">
+            <CardHeader>
+              <CardTitle>Contract focus</CardTitle>
+              <CardDescription>Select the contract categories you care about most.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {CATEGORIES.map((cat) => (
+                  <label
+                    key={cat}
+                    className="flex items-center gap-3 rounded-md border border-border bg-background/60 px-3 py-2 cursor-pointer hover:border-primary/60 transition"
+                  >
                     <Checkbox
-                      id={category}
-                      checked={selectedCategories.includes(category)}
-                      onCheckedChange={() => handleCategoryToggle(category)}
+                      checked={selectedCategories.includes(cat)}
+                      onCheckedChange={() => handleCategoryToggle(cat)}
+                      id={`cat-${cat}`}
                     />
-                    <label
-                      htmlFor={category}
-                      className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                    >
-                      {category}
-                    </label>
-                  </div>
+                    <span>{cat}</span>
+                  </label>
                 ))}
               </div>
+            </CardContent>
+          </Card>
 
-              <div className="space-y-2">
-                <Label>Confirm</Label>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="terms"
-                    checked={acceptedTerms}
-                    onCheckedChange={(v) => setAcceptedTerms(Boolean(v))}
-                  />
-                  <label htmlFor="terms" className="text-sm">
-                    I agree to Lexy&apos;s Terms of Use.
-                  </label>
+          <Card className="bg-card/70 border border-white/10 backdrop-blur">
+            <CardHeader>
+              <CardTitle>Agreements</CardTitle>
+              <CardDescription>Please confirm before continuing.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <label className="flex items-start gap-3">
+                <Checkbox
+                  id="terms"
+                  checked={acceptedTerms}
+                  onCheckedChange={(checked) => setAcceptedTerms(!!checked)}
+                />
+                <div className="space-y-1">
+                  <span className="font-medium">I agree to the Terms of Service</span>
+                  <p className="text-sm text-muted-foreground">
+                    You can read the terms in the Settings page after onboarding.
+                  </p>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="disclaimer"
-                    checked={acceptedDisclaimer}
-                    onCheckedChange={(v) => setAcceptedDisclaimer(Boolean(v))}
-                  />
-                  <label htmlFor="disclaimer" className="text-sm">
-                    I understand this app does not provide legal advice and I
-                    should consult a qualified lawyer before relying on any
-                    document.
-                  </label>
-                </div>
-              </div>
+              </label>
 
-              <div className="flex gap-4">
-                <Button variant="outline" onClick={() => setStep(1)} className="w-full">
-                  Back
-                </Button>
-                <Button
-                  onClick={handleComplete}
-                  className="w-full bg-gold text-gold-foreground hover:bg-gold/90"
-                  disabled={!canComplete}
-                >
-                  Complete Setup
-                </Button>
-              </div>
+              <label className="flex items-start gap-3">
+                <Checkbox
+                  id="disclaimer"
+                  checked={acceptedDisclaimer}
+                  onCheckedChange={(checked) => setAcceptedDisclaimer(!!checked)}
+                />
+                <div className="space-y-1">
+                  <span className="font-medium">I understand Lexy is not a law firm</span>
+                  <p className="text-sm text-muted-foreground">
+                    Lexy provides AI assistance; it does not replace professional legal advice.
+                  </p>
+                </div>
+              </label>
+            </CardContent>
+          </Card>
+
+          <footer className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2">
+            <div className="text-sm text-muted-foreground">Need help? Email support@lexgen.co</div>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => navigate("/dashboard")}>
+                Skip for now
+              </Button>
+              <Button
+                className="bg-gold text-gold-foreground hover:bg-gold/90"
+                onClick={handleComplete}
+                disabled={
+                  !jurisdiction ||
+                  selectedCategories.length === 0 ||
+                  !acceptedTerms ||
+                  !acceptedDisclaimer
+                }
+              >
+                Complete setup
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+          </footer>
+        </div>
+      )}
+    </AuthShell>
   );
 };
 

@@ -1,80 +1,39 @@
-import { Button } from '@/components/ui/button';
-import { useNavigate } from 'react-router-dom';
-import { FileText, Sparkles, Shield, Zap } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
+import { FileText, Sparkles, Shield, Zap } from "lucide-react";
+import TopBar from "@/components/topbar";
+import Hero from "@/components/hero";
+import Trust from "@/components/trust";
+import Stats from "@/components/stats";
+import FeaturedVideo from "@/components/featured_video";
+import Footer from "@/components/footer";
+import Action from "@/components/action";
+import Benefits from "@/components/benefits";
+import FAQs from "@/components/faq";
+import Videos from "@/components/videos";
 
 const Landing = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-background">
-      <nav className="border-b border-border">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold text-foreground">LEXY</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" onClick={() => navigate('/login')}>
-              Login
-            </Button>
-            <Button className="bg-gold text-gold-foreground hover:bg-gold/90" onClick={() => navigate('/signup')}>
-              Get Started
-            </Button>
-          </div>
+    <>
+      <div className="flex items-center justify-center w-full bg-background">
+        <div className="w-full bg-background max-w-[1440px] min-w-[1080px]">
+          <nav>
+            <TopBar />
+          </nav>
+          <Hero />
+          <Trust />
+          <Stats />
+          <Action />
+          <FeaturedVideo />
+          <Benefits />
+          <Videos />
+          <FAQs />
         </div>
-      </nav>
-
-      <main className="container mx-auto px-4 py-20">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-5xl font-bold text-foreground mb-6">
-            AI-Powered Contract Generation
-          </h1>
-          <p className="text-xl text-muted-foreground mb-8">
-            Create professional legal contracts in minutes with our intelligent assistant.
-            170+ contract types, tailored to Australian law.
-          </p>
-          <Button 
-            size="lg" 
-            className="bg-gold text-gold-foreground hover:bg-gold/90 text-lg px-8"
-            onClick={() => navigate('/signup')}
-          >
-            Start Free Trial
-          </Button>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-8 mt-20 max-w-5xl mx-auto">
-          <div className="bg-card border border-border rounded-lg p-6">
-            <div className="h-12 w-12 bg-primary/20 rounded-lg flex items-center justify-center mb-4">
-              <Sparkles className="h-6 w-6 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold text-foreground mb-2">AI-Powered</h3>
-            <p className="text-muted-foreground">
-              Advanced AI asks the right questions and generates precise contracts tailored to your needs.
-            </p>
-          </div>
-
-          <div className="bg-card border border-border rounded-lg p-6">
-            <div className="h-12 w-12 bg-accent/20 rounded-lg flex items-center justify-center mb-4">
-              <Shield className="h-6 w-6 text-accent" />
-            </div>
-            <h3 className="text-xl font-semibold text-foreground mb-2">Legally Sound</h3>
-            <p className="text-muted-foreground">
-              Templates based on Australian law with comprehensive clauses covering all essential terms.
-            </p>
-          </div>
-
-          <div className="bg-card border border-border rounded-lg p-6">
-            <div className="h-12 w-12 bg-gold/20 rounded-lg flex items-center justify-center mb-4">
-              <Zap className="h-6 w-6 text-gold" />
-            </div>
-            <h3 className="text-xl font-semibold text-foreground mb-2">Lightning Fast</h3>
-            <p className="text-muted-foreground">
-              Generate complete contracts in minutes, not hours. Download as PDF or DOCX instantly.
-            </p>
-          </div>
-        </div>
-      </main>
-    </div>
+      </div>
+      <Footer />
+    </>
   );
 };
 

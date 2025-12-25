@@ -1,7 +1,7 @@
 // src/contracts/contracts.service.ts
 import { Injectable, Logger, NotFoundException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import axios from 'axios';
 
 import { ContractDraft } from './entities/contract-draft.entity';
@@ -11,7 +11,7 @@ import { ContractQuestionTemplate } from 'src/contract-catalog/entities/contract
 import { CreateContractDraftDto } from './dto/create-contract-draft.dto';
 import { CreateChatMessageDto } from './dto/create-chat-message.dto';
 import { GenerateContractDto } from './dto/generate-contract.dto';
-import { User } from 'src/users/entities/user.entity';
+import { SubscriptionTier, User } from 'src/users/entities/user.entity';
 
 type MlChatRole = 'system' | 'user' | 'assistant';
 
@@ -410,6 +410,7 @@ export class ContractsService {
         dto: GenerateContractDto,
     ) {
         const draft = await this.getDraftForUserOrThrow(draftId, userId);
+        await this.enforceMonthlyGenerationLimit(draft.user);
 
         // Persist form answers if provided
         if (dto.answers) {
@@ -426,5 +427,45 @@ export class ContractsService {
         await this.drafts.save(draft);
 
         return this.getDraftWithMessages(draftId, userId);
+    }
+
+    /**
+     * Enforce per-tier monthly generation limits.
+     * Free: 3, Pro: 20, Business: unlimited (very high cap for safety).
+     */
+    private async enforceMonthlyGenerationLimit(user: User) {
+        const limit = this.getMonthlyGenerationLimit(user.subscription_tier);
+        if (!limit) return; // unlimited
+
+        const now = new Date();
+        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+        const generationsThisMonth = await this.drafts.count({
+            where: {
+                user: { id: user.id },
+                ai_draft_text: Not(IsNull()),
+                updated_at: MoreThanOrEqual(monthStart),
+            },
+        });
+
+        if (generationsThisMonth >= limit) {
+            throw new ForbiddenException(
+                `Monthly contract generation limit reached for your plan (${limit} per month).`,
+            );
+        }
+    }
+
+    private getMonthlyGenerationLimit(tier: SubscriptionTier): number | null {
+        switch (tier) {
+            case SubscriptionTier.FREE:
+                return 3;
+            case SubscriptionTier.PRO:
+                return 20;
+            case SubscriptionTier.BUSINESS:
+            case SubscriptionTier.ENTERPRISE:
+                return null; // unlimited
+            default:
+                return 3;
+        }
     }
 }

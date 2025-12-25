@@ -16,6 +16,13 @@ export type SubscriptionSummary = {
   stripe_subscription_id: string | null;
 };
 
+export type CheckoutFlowResponse = {
+  action: "checkout" | "portal" | "updated";
+  url?: string | null;
+  message?: string;
+  updatedTier?: string;
+};
+
 export const subscriptionService = {
   /**
    * Start a checkout session for the given plan key.
@@ -23,7 +30,7 @@ export const subscriptionService = {
    * Body: { planKey: string }
    */
   async startCheckout(planKey: string) {
-    return api<{ url: string }>("/billing/checkout-session", {
+    return api<CheckoutFlowResponse>("/billing/checkout-session", {
       method: "POST",
       body: { planKey },
     });

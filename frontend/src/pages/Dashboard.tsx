@@ -80,22 +80,55 @@ export default function Dashboard() {
       <header className="border-b border-border/40 bg-card/60 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
+            <img
+              src="/lexgen-logo-transparent.svg"
+              alt="Lexy"
+              className="h-8 w-8"
+            />
             <span className="text-xl font-semibold tracking-wide text-foreground">
-              LEXY
+              Lexy
             </span>
           </div>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-muted-foreground">
-              {user?.full_name} <span className="opacity-70">({user?.subscription_tier})</span>
-            </span>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/profile')}>
+          <div className="flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-3 rounded-full bg-white/5 border border-white/10 px-3 py-2 backdrop-blur">
+              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-primary/70 to-accent/70 flex items-center justify-center text-sm font-semibold text-background uppercase">
+                {(user?.full_name || user?.email || "LX")
+                  .split(" ")
+                  .map((p) => p[0])
+                  .join("")
+                  .slice(0, 2)}
+              </div>
+              <div className="leading-tight">
+                <div className="text-foreground font-semibold">
+                  {user?.full_name || user?.email || "Guest"}
+                </div>
+                <div className="text-[11px] text-white/60 capitalize">
+                  {user?.subscription_tier || "free"} plan
+                </div>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/20 bg-card/60 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/20 transition-all duration-200"
+              onClick={() => navigate('/profile')}
+            >
               Profile
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/subscriptions')}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/20 bg-card/60 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/20 transition-all duration-200"
+              onClick={() => navigate('/subscriptions')}
+            >
               Subscriptions
             </Button>
-            <Button variant="ghost" size="icon" onClick={handleLogout}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hover:-translate-y-0.5 transition-transform duration-200"
+              onClick={handleLogout}
+            >
               <LogOut className="h-4 w-4" />
             </Button>
           </div>

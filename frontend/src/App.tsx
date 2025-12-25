@@ -13,6 +13,8 @@ import ContractSelector from "./pages/ContractSelector";
 import ContractWorkspace from "./pages/ContractWorkspace";
 import Subscriptions from "./pages/Subscriptions";
 import Profile from "./pages/Profile";
+import BillingSuccess from "./pages/BillingSuccess";
+import BillingCancel from "./pages/BillingCancel";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -70,6 +72,22 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Subscriptions />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/billing/success"
+              element={
+                <ProtectedRoute>
+                  <BillingSuccess />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/billing/cancel"
+              element={
+                <ProtectedRoute>
+                  <BillingCancel />
                 </ProtectedRoute>
               }
             />

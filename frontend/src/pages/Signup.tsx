@@ -1,18 +1,18 @@
 // src/pages/auth/Signup.tsx (or wherever it lives)
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useNavigate, Link } from 'react-router-dom';
-import { useToast } from '@/hooks/use-toast';
-import { FileText } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useNavigate, Link } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/context/AuthContext";
+import AuthShell from "@/components/AuthShell";
 
 const Signup = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const navigate = useNavigate();
@@ -45,20 +45,17 @@ const Signup = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <FileText className="h-8 w-8 text-primary" />
-            <span className="text-2xl font-bold text-foreground">Lexy</span>
-          </div>
-          <CardTitle>Create your Lexy account</CardTitle>
-          <CardDescription>
-            Start generating professional, AI-assisted contracts in minutes.
-          </CardDescription>
+    <AuthShell
+      title="Create your Lexy account"
+      description="Start generating professional, AI-assisted contracts in minutes."
+    >
+      <Card className="w-full max-w-xl mx-auto bg-card/70 border-white/10 shadow-2xl shadow-black/30 backdrop-blur">
+        <CardHeader className="text-center space-y-2">
+          <CardTitle className="text-2xl">Join Lexy</CardTitle>
+          <CardDescription>Build faster with trusted, cited answers.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSignup} className="space-y-4">
+          <form onSubmit={handleSignup} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="fullName">Full name</Label>
               <Input
@@ -97,22 +94,22 @@ const Signup = () => {
 
             <Button
               type="submit"
-              className="w-full bg-gold text-gold-foreground hover:bg-gold/90"
+              className="w-full bg-gold text-gold-foreground hover:bg-gold/90 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-gold/30 focus-visible:translate-y-0"
               disabled={submitting}
             >
-              {submitting ? 'Creating account…' : 'Create account'}
+              {submitting ? "Creating account…" : "Create account"}
             </Button>
           </form>
 
           <div className="mt-4 text-center text-sm text-muted-foreground">
-            Already have an account{' '}
+            Already have an account{" "}
             <Link to="/login" className="text-primary hover:underline">
               Sign in
             </Link>
           </div>
         </CardContent>
       </Card>
-    </div>
+    </AuthShell>
   );
 };
 

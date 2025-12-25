@@ -82,28 +82,28 @@ export const PLAN_LIMITS: Record<BillingTier, PlanLimits> = {
     teamFeatures: false,
   },
   pro_monthly: {
-    contractsPerMonth: 9999,
+    contractsPerMonth: 20,
     watermarkExports: false,
     libraryAccess: 'full',
     priorityAi: true,
     teamFeatures: false,
   },
   pro_yearly: {
-    contractsPerMonth: 9999,
+    contractsPerMonth: 20,
     watermarkExports: false,
     libraryAccess: 'full',
     priorityAi: true,
     teamFeatures: false,
   },
   business_monthly: {
-    contractsPerMonth: 9999,
+    contractsPerMonth: 1_000_000, // effectively unlimited
     watermarkExports: false,
     libraryAccess: 'full',
     priorityAi: true,
     teamFeatures: true,
   },
   business_yearly: {
-    contractsPerMonth: 9999,
+    contractsPerMonth: 1_000_000, // effectively unlimited
     watermarkExports: false,
     libraryAccess: 'full',
     priorityAi: true,
