@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lexgen.ai/schemas/rule-language.schema.json",
+  "title": "Rule Language (v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rule_id", "severity", "when", "then"],
+  "properties": {
+    "rule_id": { "type": "string", "minLength": 1 },
+    "severity": { "type": "string", "enum": ["info", "warning", "block"] },
+    "description": { "type": "string" },
+    "when": { "$ref": "#/$defs/expression" },
+    "then": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/action" }
+    }
+  },
+  "$defs": {
+    "expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        { "required": ["all"], "properties": { "all": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/expression" } } } },
+        { "required": ["any"], "properties": { "any": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/expression" } } } },
+        { "required": ["not"], "properties": { "not": { "$ref": "#/$defs/expression" } } },
+        {
+          "required": ["var", "op"],
+          "properties": {
+            "var": { "type": "string", "minLength": 1 },
+            "op": {
+              "type": "string",
+              "enum": [
+                "eq",
+                "ne",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "in",
+                "contains",
+                "starts_with",
+                "ends_with",
+                "regex",
+                "exists",
+                "empty"
+              ]
+            },
+            "value": { "$ref": "#/$defs/value" }
+          }
+        }
+      ]
+    },
+    "value": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "number" },
+        { "type": "boolean" },
+        { "type": "null" },
+        { "type": "array" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["var"],
+          "properties": { "var": { "type": "string", "minLength": 1 } }
+        }
+      ]
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": ["action", "message"],
+          "properties": {
+            "action": { "const": "warn" },
+            "message": { "type": "string", "minLength": 1 },
+            "context": { "type": "object" }
+          }
+        },
+        {
+          "required": ["action", "message"],
+          "properties": {
+            "action": { "const": "block" },
+            "message": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "required": ["action", "clause_id", "status"],
+          "properties": {
+            "action": { "const": "set_clause_status" },
+            "clause_id": { "type": "string", "minLength": 1 },
+            "status": {
+              "type": "string",
+              "enum": ["included", "excluded", "mandatory", "optional", "recommended"]
+            }
+          }
+        },
+        {
+          "required": ["action", "clause_id", "variant_id"],
+          "properties": {
+            "action": { "const": "set_variant" },
+            "clause_id": { "type": "string", "minLength": 1 },
+            "variant_id": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "required": ["action", "question_key"],
+          "properties": {
+            "action": { "const": "add_question" },
+            "question_key": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "required": ["action", "variable_key", "value"],
+          "properties": {
+            "action": { "const": "set_variable" },
+            "variable_key": { "type": "string", "minLength": 1 },
+            "value": { "$ref": "#/$defs/value" }
+          }
+        }
+      ]
+    }
+  }
+}

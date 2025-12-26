@@ -1,0 +1,653 @@
+{
+  "template_version_code": "FT-LONG@1.0.0",
+  "template_variable_aliases": [
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "alias_key": "position",
+      "target_key": "job_title",
+      "confidence": 0.95,
+      "notes": "CORE-005 uses position; map from job_title"
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "alias_key": "salary",
+      "target_key": "base_salary",
+      "confidence": 0.9,
+      "notes": "CORE-007 uses salary; map from base_salary"
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "alias_key": "employer_identifier",
+      "target_key": "employer_abn",
+      "confidence": 0.9,
+      "notes": "CORE-001 uses identifier; map from employer_abn"
+    }
+  ],
+  "template_variable_derivations": [
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "variable_key": "employer_identifier_type",
+      "expression": "coalesce(profile.employer_identifier_type, 'ABN')",
+      "depends_on": [
+        "employer_abn"
+      ]
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "variable_key": "governing_state",
+      "expression": "jurisdiction_to_state(jurisdiction)",
+      "depends_on": [
+        "jurisdiction"
+      ]
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "variable_key": "termination_clause",
+      "expression": "clause_number('TERMINATION')",
+      "depends_on": [
+        "generation_plan"
+      ]
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "variable_key": "schedule_parsed",
+      "expression": "parse_working_hours(working_hours).valid",
+      "depends_on": [
+        "working_hours"
+      ]
+    }
+  ],
+  "template_decision_questions": [
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-contract_basis",
+      "decision_key": "contract_basis",
+      "text": "Is this employment tied to a specific project or parental leave cover?",
+      "input_type": "select",
+      "options": [
+        {
+          "value": "standard",
+          "label": "Standard maximum-term employment"
+        },
+        {
+          "value": "project",
+          "label": "Project-based"
+        },
+        {
+          "value": "parental_leave",
+          "label": "Parental leave cover"
+        }
+      ],
+      "required": false,
+      "show_if": null,
+      "effects": [
+        {
+          "when": {
+            "var": "contract_basis",
+            "op": "eq",
+            "value": "standard"
+          },
+          "set_variant": {
+            "clause_id": "CORE-002",
+            "variant_id": "CORE-002-A"
+          }
+        },
+        {
+          "when": {
+            "var": "contract_basis",
+            "op": "eq",
+            "value": "project"
+          },
+          "set_variant": {
+            "clause_id": "CORE-002",
+            "variant_id": "CORE-002-B"
+          }
+        },
+        {
+          "when": {
+            "var": "contract_basis",
+            "op": "eq",
+            "value": "parental_leave"
+          },
+          "set_variant": {
+            "clause_id": "CORE-002",
+            "variant_id": "CORE-002-C"
+          }
+        }
+      ]
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-employer_group",
+      "decision_key": "employer_group",
+      "text": "Is the employer part of a corporate group?",
+      "input_type": "yes-no",
+      "options": [],
+      "required": false,
+      "show_if": null,
+      "effects": [
+        {
+          "when": {
+            "var": "employer_group",
+            "op": "eq",
+            "value": true
+          },
+          "set_variant": {
+            "clause_id": "CORE-001",
+            "variant_id": "CORE-001-B"
+          }
+        },
+        {
+          "when": {
+            "var": "employer_group",
+            "op": "eq",
+            "value": false
+          },
+          "set_variant": {
+            "clause_id": "CORE-001",
+            "variant_id": "CORE-001-A"
+          }
+        }
+      ]
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-maximum_term_exemption",
+      "decision_key": "maximum_term_exemption",
+      "text": "Is this contract exempt from fixed-term limitations?",
+      "input_type": "yes-no",
+      "options": [],
+      "required": false,
+      "show_if": null,
+      "effects": [
+        {
+          "when": {
+            "var": "maximum_term_exemption",
+            "op": "eq",
+            "value": true
+          },
+          "set_variant": {
+            "clause_id": "CORE-003",
+            "variant_id": "CORE-003-B"
+          }
+        },
+        {
+          "when": {
+            "var": "maximum_term_exemption",
+            "op": "eq",
+            "value": false
+          },
+          "set_variant": {
+            "clause_id": "CORE-003",
+            "variant_id": "CORE-003-A"
+          }
+        }
+      ]
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-probation_extension",
+      "decision_key": "probation_extension",
+      "text": "Should the probation period be extendable after a review?",
+      "input_type": "yes-no",
+      "options": [],
+      "required": false,
+      "show_if": {
+        "var": "has_probation",
+        "op": "eq",
+        "value": true
+      },
+      "effects": [
+        {
+          "when": {
+            "var": "probation_extension",
+            "op": "eq",
+            "value": true
+          },
+          "set_variant": {
+            "clause_id": "CORE-004",
+            "variant_id": "CORE-004-B"
+          }
+        },
+        {
+          "when": {
+            "var": "probation_extension",
+            "op": "eq",
+            "value": false
+          },
+          "set_variant": {
+            "clause_id": "CORE-004",
+            "variant_id": "CORE-004-A"
+          }
+        }
+      ]
+    }
+  ],
+  "template_missing_variable_questions": [
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-pay_frequency",
+      "variable_key": "pay_frequency",
+      "text": "How often is salary paid?",
+      "input_type": "select",
+      "options": [
+        {
+          "value": "weekly",
+          "label": "Weekly"
+        },
+        {
+          "value": "fortnightly",
+          "label": "Fortnightly"
+        },
+        {
+          "value": "monthly",
+          "label": "Monthly"
+        },
+        {
+          "value": "other",
+          "label": "Other"
+        }
+      ],
+      "allow_custom": true,
+      "required": true,
+      "show_if": null,
+      "priority": "core",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-super_rate",
+      "variable_key": "super_rate",
+      "text": "What superannuation rate applies?",
+      "input_type": "number",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": null,
+      "priority": "core",
+      "default_value": 11.5,
+      "unit": "percent"
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-bonus_amount",
+      "variable_key": "bonus_amount",
+      "text": "What is the bonus amount or target?",
+      "input_type": "currency",
+      "options": [],
+      "allow_custom": false,
+      "required": false,
+      "show_if": {
+        "var": "benefits",
+        "op": "contains",
+        "value": "bonus"
+      },
+      "priority": "optional",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-annual_leave_weeks",
+      "variable_key": "annual_leave_weeks",
+      "text": "How many weeks of annual leave apply?",
+      "input_type": "number",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": null,
+      "priority": "core",
+      "default_value": 4,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-personal_leave_days",
+      "variable_key": "personal_leave_days",
+      "text": "How many personal/carer's leave days apply per year?",
+      "input_type": "number",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": null,
+      "priority": "core",
+      "default_value": 10,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-compassionate_days",
+      "variable_key": "compassionate_days",
+      "text": "How many compassionate leave days apply per occasion?",
+      "input_type": "number",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": null,
+      "priority": "core",
+      "default_value": 2,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-evidence_days",
+      "variable_key": "evidence_days",
+      "text": "After how many consecutive days of absence is evidence required?",
+      "input_type": "number",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": null,
+      "priority": "core",
+      "default_value": 2,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-leave_loading",
+      "variable_key": "leave_loading",
+      "text": "What annual leave loading applies (if any)?",
+      "input_type": "number",
+      "options": [],
+      "allow_custom": false,
+      "required": false,
+      "show_if": null,
+      "priority": "optional",
+      "default_value": 17.5,
+      "unit": "percent"
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-start_time",
+      "variable_key": "start_time",
+      "text": "What is the usual start time (HH:MM)?",
+      "input_type": "text",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": {
+        "var": "schedule_parsed",
+        "op": "eq",
+        "value": false
+      },
+      "priority": "core",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-end_time",
+      "variable_key": "end_time",
+      "text": "What is the usual end time (HH:MM)?",
+      "input_type": "text",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": {
+        "var": "schedule_parsed",
+        "op": "eq",
+        "value": false
+      },
+      "priority": "core",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-work_days",
+      "variable_key": "work_days",
+      "text": "Which days are ordinarily worked?",
+      "input_type": "multi-select",
+      "options": [
+        {
+          "value": "mon",
+          "label": "Mon"
+        },
+        {
+          "value": "tue",
+          "label": "Tue"
+        },
+        {
+          "value": "wed",
+          "label": "Wed"
+        },
+        {
+          "value": "thu",
+          "label": "Thu"
+        },
+        {
+          "value": "fri",
+          "label": "Fri"
+        },
+        {
+          "value": "sat",
+          "label": "Sat"
+        },
+        {
+          "value": "sun",
+          "label": "Sun"
+        }
+      ],
+      "allow_custom": false,
+      "required": true,
+      "show_if": {
+        "var": "schedule_parsed",
+        "op": "eq",
+        "value": false
+      },
+      "priority": "core",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-probation_notice",
+      "variable_key": "probation_notice",
+      "text": "What notice applies during probation?",
+      "input_type": "select",
+      "options": [
+        {
+          "value": "1_week",
+          "label": "1 week"
+        },
+        {
+          "value": "2_weeks",
+          "label": "2 weeks"
+        },
+        {
+          "value": "4_weeks",
+          "label": "4 weeks"
+        },
+        {
+          "value": "other",
+          "label": "Other"
+        }
+      ],
+      "allow_custom": true,
+      "required": true,
+      "show_if": {
+        "var": "has_probation",
+        "op": "eq",
+        "value": true
+      },
+      "priority": "core",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-extension_period",
+      "variable_key": "extension_period",
+      "text": "If probation is extended, what is the maximum extension period?",
+      "input_type": "select",
+      "options": [
+        {
+          "value": "1_month",
+          "label": "1 month"
+        },
+        {
+          "value": "2_months",
+          "label": "2 months"
+        },
+        {
+          "value": "3_months",
+          "label": "3 months"
+        },
+        {
+          "value": "other",
+          "label": "Other"
+        }
+      ],
+      "allow_custom": true,
+      "required": true,
+      "show_if": {
+        "var": "probation_extension",
+        "op": "eq",
+        "value": true
+      },
+      "priority": "optional",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-maximum_term",
+      "variable_key": "maximum_term",
+      "text": "What is the maximum term of employment?",
+      "input_type": "text",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": null,
+      "priority": "core",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-exemption_reason",
+      "variable_key": "exemption_reason",
+      "text": "What is the exemption reason for fixed-term limits?",
+      "input_type": "text",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": {
+        "var": "maximum_term_exemption",
+        "op": "eq",
+        "value": true
+      },
+      "priority": "optional",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-reason_for_maximum_term",
+      "variable_key": "reason_for_maximum_term",
+      "text": "What is the reason for using a maximum-term contract?",
+      "input_type": "text",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": {
+        "var": "maximum_term_exemption",
+        "op": "eq",
+        "value": true
+      },
+      "priority": "optional",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-restraint_period",
+      "variable_key": "restraint_period",
+      "text": "What restraint period should apply after termination?",
+      "input_type": "select",
+      "options": [
+        {
+          "value": "3_months",
+          "label": "3 months"
+        },
+        {
+          "value": "6_months",
+          "label": "6 months"
+        },
+        {
+          "value": "12_months",
+          "label": "12 months"
+        },
+        {
+          "value": "other",
+          "label": "Other"
+        }
+      ],
+      "allow_custom": true,
+      "required": true,
+      "show_if": {
+        "var": "restraint_level",
+        "op": "ne",
+        "value": "none"
+      },
+      "priority": "optional",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-restraint_area",
+      "variable_key": "restraint_area",
+      "text": "What geographic area should the restraint cover?",
+      "input_type": "text",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": {
+        "var": "restraint_level",
+        "op": "ne",
+        "value": "none"
+      },
+      "priority": "optional",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-group_name",
+      "variable_key": "group_name",
+      "text": "What is the corporate group name?",
+      "input_type": "text",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": {
+        "var": "employer_group",
+        "op": "eq",
+        "value": true
+      },
+      "priority": "optional",
+      "default_value": null,
+      "unit": null
+    },
+    {
+      "template_version_code": "FT-LONG@1.0.0",
+      "question_key": "AUTO-project_name",
+      "variable_key": "project_name",
+      "text": "What is the project name?",
+      "input_type": "text",
+      "options": [],
+      "allow_custom": false,
+      "required": true,
+      "show_if": {
+        "var": "contract_basis",
+        "op": "eq",
+        "value": "project"
+      },
+      "priority": "optional",
+      "default_value": null,
+      "unit": null
+    }
+  ]
+}
