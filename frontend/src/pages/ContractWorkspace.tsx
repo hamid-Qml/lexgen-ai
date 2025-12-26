@@ -11,6 +11,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -26,7 +32,6 @@ import {
   Download,
   RefreshCw,
   FileText,
-  ScrollText,
   Loader2,
 } from "lucide-react";
 import { contractService } from "@/services/contractService";
@@ -80,6 +85,12 @@ type BackendContractDraft = {
     // optional list of question_keys that belong on the direct form
     primaryFormKeys?: string[] | null;
     questionTemplates?: BackendQuestionTemplate[];
+    templateSections?: {
+      id?: string;
+      sectionCode: string;
+      name: string;
+      displayOrder: number;
+    }[];
   };
   chatMessages?: BackendChatMessage[];
   created_at: string;
@@ -98,6 +109,91 @@ const hasAnswerValue = (value: any) => {
   if (Array.isArray(value)) return value.length > 0;
   if (typeof value === "string") return value.trim().length > 0;
   return true;
+};
+
+const normalizeQuestionText = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const scoreQuestionMatch = (normalizedMessage: string, label: string) => {
+  const normalizedLabel = normalizeQuestionText(label);
+  if (!normalizedLabel) return 0;
+
+  if (normalizedMessage.includes(normalizedLabel)) {
+    return normalizedLabel.length + 10;
+  }
+
+  const labelWords = normalizedLabel
+    .split(" ")
+    .filter((word) => word.length > 2);
+  if (labelWords.length === 0) return 0;
+  const matches = labelWords.filter((word) =>
+    normalizedMessage.includes(word),
+  ).length;
+  return (matches / labelWords.length) * 10;
+};
+
+const inferQuestionFromAssistant = (
+  assistantMessage: string | undefined,
+  candidates: BackendQuestionTemplate[],
+) => {
+  if (!assistantMessage) return null;
+  const normalizedMessage = normalizeQuestionText(assistantMessage);
+  if (!normalizedMessage) return null;
+
+  let best: { question: BackendQuestionTemplate; score: number } | null = null;
+  for (const question of candidates) {
+    const score = scoreQuestionMatch(normalizedMessage, question.label);
+    if (score <= 0) continue;
+    if (!best || score > best.score) {
+      best = { question, score };
+    }
+  }
+
+  if (!best || best.score < 3) return null;
+  return best.question;
+};
+
+const coerceAnswerValue = (
+  value: string,
+  question: BackendQuestionTemplate,
+) => {
+  if (question.inputType === "number") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : value;
+  }
+
+  if (question.inputType === "multi_select") {
+    const parts = value
+      .split(/[,;\n]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    return parts.length > 0 ? parts : value;
+  }
+
+  return value;
+};
+
+const renderWithPlaceholders = (text: string) => {
+  const segments = text.split(/(\[[^\]]+\]|TO BE CONFIRMED)/gi);
+  return segments.map((segment, idx) => {
+    if (!segment) return null;
+    const isPlaceholder = /^(\[[^\]]+\]|TO BE CONFIRMED)$/i.test(segment);
+    if (isPlaceholder) {
+      return (
+        <strong
+          key={`ph-${idx}`}
+          className="font-semibold text-amber-900 bg-amber-100/70 px-1 rounded"
+        >
+          {segment}
+        </strong>
+      );
+    }
+    return <span key={`txt-${idx}`}>{segment}</span>;
+  });
 };
 
 const buildPendingInfoMessage = (
@@ -220,7 +316,11 @@ export default function ContractWorkspace() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const mergeAnswers = (d: BackendContractDraft | null) => ({
+  const mergeAnswers = (
+    d: BackendContractDraft | null,
+    fallback: Record<string, any> = {},
+  ) => ({
+    ...fallback,
     ...(d?.questionnaire_state || {}),
     ...((d?.ai_inputs?.chat_answers as Record<string, any>) || {}),
   });
@@ -262,6 +362,36 @@ export default function ContractWorkspace() {
 
   const startGenerationProgress = () => {
     clearGenerationTimers();
+    const sectionLabels =
+      draft?.contractType?.templateSections
+        ?.slice()
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+        .map((section) => section.name || section.sectionCode)
+        .filter(Boolean) || [];
+
+    if (sectionLabels.length > 0) {
+      const stepDelay = 650;
+      const stepCount = sectionLabels.length + 1;
+      setGenerationStep(`Drafting ${sectionLabels[0]}`);
+      setGenerationProgress(Math.max(8, Math.round((1 / stepCount) * 90)));
+
+      sectionLabels.slice(1).forEach((label, idx) => {
+        const stepIndex = idx + 2;
+        const timer = setTimeout(() => {
+          setGenerationStep(`Drafting ${label}`);
+          setGenerationProgress(Math.round((stepIndex / stepCount) * 90));
+        }, stepDelay * stepIndex);
+        generationTimers.current.push(timer);
+      });
+
+      const finalTimer = setTimeout(() => {
+        setGenerationStep("Finalizing contract");
+        setGenerationProgress(92);
+      }, stepDelay * (sectionLabels.length + 1));
+      generationTimers.current.push(finalTimer);
+      return;
+    }
+
     setGenerationStep("Gathering your details");
     setGenerationProgress(8);
 
@@ -324,7 +454,7 @@ export default function ContractWorkspace() {
   const isFormComplete = (() => {
     if (!draft) return false;
     const primary = getPrimaryQuestions(draft);
-    if (primary.length === 0) return false;
+    if (primary.length === 0) return true;
 
     return primary
       .filter((q) => q.isRequired)
@@ -418,12 +548,6 @@ export default function ContractWorkspace() {
     }
   }, [requiresMoreInformation, allowGenerateOverride]);
 
-  useEffect(() => {
-    if (requiresMoreInformation) {
-      setAllowGenerateOverride(false);
-    }
-  }, [answers, messages.length, requiresMoreInformation]);
-
   const truncatedPending = pendingRequiredQuestions.slice(0, 3);
   const hasMorePending =
     pendingRequiredQuestions.length > truncatedPending.length;
@@ -507,7 +631,7 @@ export default function ContractWorkspace() {
         answers,
       })) as BackendContractDraft;
       setDraft(started);
-      setAnswers(mergeAnswers(started));
+      setAnswers((prev) => mergeAnswers(started, prev));
       setMessages(started.chatMessages || []);
       setStage("chat");
     } catch (err: any) {
@@ -539,6 +663,34 @@ export default function ContractWorkspace() {
     try {
       setSending(true);
       setAssistantThinking(true);
+      const allUnanswered = (draft.contractType?.questionTemplates || []).filter(
+        (q) => !hasAnswerValue(answers[q.questionKey]),
+      );
+      const requiredUnanswered = allUnanswered.filter((q) => q.isRequired);
+      const candidates =
+        requiredUnanswered.length > 0 ? requiredUnanswered : allUnanswered;
+      const lastAssistantMessage = [...messages]
+        .reverse()
+        .find((msg) => msg.sender === "assistant");
+      const inferredQuestion = inferQuestionFromAssistant(
+        lastAssistantMessage?.message,
+        candidates,
+      );
+      const fallbackQuestion =
+        !inferredQuestion &&
+        messages.length > 0 &&
+        messages[messages.length - 1].sender === "assistant"
+          ? candidates[0]
+          : null;
+      const targetQuestion = inferredQuestion ?? fallbackQuestion;
+
+      if (targetQuestion) {
+        const coercedValue = coerceAnswerValue(outbound, targetQuestion);
+        setAnswers((prev) => ({
+          ...prev,
+          [targetQuestion.questionKey]: coercedValue,
+        }));
+      }
       setMessages((prev) => [...prev, optimisticMessage]);
       setUserInput("");
 
@@ -553,7 +705,7 @@ export default function ContractWorkspace() {
       })) as BackendContractDraft;
 
       setDraft(updated);
-      setAnswers(mergeAnswers(updated));
+      setAnswers((prev) => mergeAnswers(updated, prev));
       setMessages(updated.chatMessages || []);
     } catch (e: any) {
       console.error(e);
@@ -568,18 +720,27 @@ export default function ContractWorkspace() {
     }
   };
 
-  const handleDownload = () => {
-    if (!draft?.ai_draft_text) return;
-
-    const blob = new Blob([draft.ai_draft_text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const baseName =
-      draft.contractType?.name || draft.title || "generated_contract";
-    a.href = url;
-    a.download = `${baseName.replace(/\s+/g, "_")}_${Date.now()}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleDownload = async (format: "pdf" | "docx" | "txt") => {
+    if (!draft?.ai_draft_text || !id) return;
+    try {
+      const { blob, filename } = await contractService.downloadDraft(
+        id,
+        format,
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Download failed",
+        description: err?.message || "Unable to download the contract.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleConfirmSkip = async () => {
@@ -650,7 +811,7 @@ export default function ContractWorkspace() {
 
     if (!draft || !id) return;
 
-    if (!isFormComplete) {
+    if (!isFormComplete && !allowGenerateOverride) {
       toast({
         title: "Missing details",
         description:
@@ -695,7 +856,7 @@ export default function ContractWorkspace() {
 
       setDraft(updated);
       setMessages(updated.chatMessages || []);
-      setAnswers(mergeAnswers(updated));
+      setAnswers((prev) => mergeAnswers(updated, prev));
       setStage("preview");
       finishGenerationProgress("success");
     } catch (e: any) {
@@ -863,7 +1024,11 @@ export default function ContractWorkspace() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className="flex items-center gap-2">
-              <FileText className="h-6 w-6 text-primary" />
+              <img
+                src="/lexgen-logo-transparent.svg"
+                alt="Lexgen logo"
+                className="h-7 w-7"
+              />
               <span className="text-xl font-bold text-foreground">
                 {draft?.contractType?.name ||
                   draft?.title ||
@@ -872,15 +1037,29 @@ export default function ContractWorkspace() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={handleDownload}
-              disabled={!draft?.ai_draft_text}
-              className="bg-gold hover:bg-gold/90 text-background"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  disabled={!draft?.ai_draft_text}
+                  className="bg-gold hover:bg-gold/90 text-background"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleDownload("pdf")}>
+                  PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownload("docx")}>
+                  DOCX
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDownload("txt")}>
+                  Text
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </header>
@@ -930,7 +1109,14 @@ export default function ContractWorkspace() {
         {stage === "chat" && (
           <Card className="mb-6">
             <CardHeader>
-              <CardTitle>Contract Details</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <img
+                  src="/lexgen-logo-transparent.svg"
+                  alt="Lexgen logo"
+                  className="h-6 w-6"
+                />
+                Contract Details
+              </CardTitle>
               <p className="text-sm text-muted-foreground">
                 Answer our chatbot’s questions or ask it to add/remove clauses.
                 When you’re ready, generate your contract draft.
@@ -1025,7 +1211,7 @@ export default function ContractWorkspace() {
                   </div>
                 </div>
               )}
-              <ScrollArea className="max-h-[60vh] min-h-[280px] pr-4">
+              <ScrollArea className="h-[60vh] min-h-[280px] pr-4">
                 <div className="space-y-4">
                   {messages.map((msg) => (
                     <div
@@ -1056,7 +1242,7 @@ export default function ContractWorkspace() {
                         </div>
                         <div>
                           <p className="text-xs font-semibold text-primary">
-                            Lexy is thinking
+                            Lexifying
                           </p>
                           <div className="mt-1 flex gap-1">
                             <span className="h-2.5 w-2.5 rounded-full bg-primary animate-bounce" />
@@ -1105,10 +1291,17 @@ export default function ContractWorkspace() {
                     generating || !canGenerateContract || assistantThinking || sending
                   }
                   size="lg"
-                  className="bg-gold hover:bg-gold/90 text-background font-semibold px-8"
+                  className="bg-gold hover:bg-gold/90 text-background font-semibold px-5 gap-2"
                 >
-                  <ScrollText className="h-5 w-5 mr-2" />
-                  {generating ? "Generating..." : "Generate Contract"}
+                  <img
+                    src="/lexgen-logo-transparent.svg"
+                    alt="Lexgen logo"
+                    className="h-5 w-5 shrink-0 object-contain"
+                    style={{ filter: "brightness(0)" }}
+                  />
+                  <span className="leading-none">
+                    {generating ? "Generating..." : "Generate"}
+                  </span>
                 </Button>
               </div>
             </CardContent>
@@ -1120,7 +1313,14 @@ export default function ContractWorkspace() {
           <Card className="bg-white text-black">
             <CardHeader className="border-b">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-black">Contract Details</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-black">
+                  <img
+                    src="/lexgen-logo-transparent.svg"
+                    alt="Lexgen logo"
+                    className="h-6 w-6"
+                  />
+                  Contract Details
+                </CardTitle>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"
@@ -1143,9 +1343,9 @@ export default function ContractWorkspace() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="p-8">
+            <CardContent className="p-0">
               {showGenerationProgress && (
-                <div className="mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3 shadow-sm">
+                <div className="mx-8 mt-8 mb-4 rounded-lg border border-primary/20 bg-primary/5 p-3 shadow-sm">
                   <div className="flex items-center justify-between text-sm font-medium text-primary">
                     <div className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -1163,49 +1363,68 @@ export default function ContractWorkspace() {
                   </div>
                 </div>
               )}
-              <div className="max-w-4xl mx-auto space-y-4 font-serif text-base leading-relaxed text-slate-900">
-                {formattedContractBlocks.length === 0 ? (
-                  <p className="text-muted-foreground">
-                    No contract text is available yet.
-                  </p>
-                ) : (
-                  formattedContractBlocks.map((block, idx) => {
-                    if (block.type === "heading") {
-                      const headingClass =
-                        block.level === "main"
-                          ? "text-xl font-semibold text-primary mt-6 first:mt-0"
-                          : "text-base font-medium text-primary/80 mt-4 first:mt-0";
-                      return (
-                        <h3
-                          key={`${block.content}-${idx}`}
-                          className={headingClass}
-                        >
-                          {block.content}
-                        </h3>
-                      );
-                    }
-
-                    if (block.type === "list") {
-                      return (
-                        <ul
-                          key={`list-${idx}`}
-                          className="list-disc pl-6 space-y-1 text-black/80"
-                        >
-                          {block.items.map((item, liIdx) => (
-                            <li key={`list-${idx}-${liIdx}`}>{item}</li>
-                          ))}
-                        </ul>
-                      );
-                    }
-
-                    return (
-                      <p key={`paragraph-${idx}`} className="text-black/80">
-                        {block.content}
+              <ScrollArea className="h-[72vh] pr-6">
+                <div className="mx-auto w-full max-w-5xl px-6 pb-12">
+                  <div className="rounded-2xl border border-slate-200 bg-white shadow-xl">
+                    <div className="border-b border-slate-200 px-10 py-8">
+                      <p className="text-xs uppercase tracking-[0.24em] text-slate-500">
+                        Lexgen draft
                       </p>
-                    );
-                  })
-                )}
-              </div>
+                      <h2 className="mt-2 text-2xl font-semibold text-black">
+                        {draft?.title || draft?.contractType?.name || "Contract"}
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Generated {new Date(draft?.updated_at || Date.now()).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="px-10 py-8 space-y-5 font-serif text-[15px] leading-7 text-slate-900">
+                      {formattedContractBlocks.length === 0 ? (
+                        <p className="text-muted-foreground">
+                          No contract text is available yet.
+                        </p>
+                      ) : (
+                        formattedContractBlocks.map((block, idx) => {
+                          if (block.type === "heading") {
+                            const headingClass =
+                              block.level === "main"
+                                ? "text-lg font-semibold text-black tracking-wide mt-6 first:mt-0"
+                                : "text-base font-semibold text-slate-800 mt-4 first:mt-0";
+                            return (
+                              <h3
+                                key={`${block.content}-${idx}`}
+                                className={headingClass}
+                              >
+                                {renderWithPlaceholders(block.content)}
+                              </h3>
+                            );
+                          }
+
+                          if (block.type === "list") {
+                            return (
+                              <ul
+                                key={`list-${idx}`}
+                                className="list-disc pl-6 space-y-1 text-slate-800"
+                              >
+                                {block.items.map((item, liIdx) => (
+                                  <li key={`list-${idx}-${liIdx}`}>
+                                    {renderWithPlaceholders(item)}
+                                  </li>
+                                ))}
+                              </ul>
+                            );
+                          }
+
+                          return (
+                            <p key={`paragraph-${idx}`} className="text-slate-800">
+                              {renderWithPlaceholders(block.content)}
+                            </p>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </ScrollArea>
             </CardContent>
           </Card>
         )}

@@ -1,5 +1,5 @@
 // src/contracts/contracts.service.ts
-import { Injectable, Logger, NotFoundException, ForbiddenException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ForbiddenException, InternalServerErrorException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, MoreThanOrEqual, Not, Repository } from 'typeorm';
 import axios from 'axios';
@@ -8,10 +8,15 @@ import { ContractDraft } from './entities/contract-draft.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { ContractType } from 'src/contract-catalog/entities/contract-type.entity';
 import { ContractQuestionTemplate } from 'src/contract-catalog/entities/contract-question-template.entity';
+import { ContractTemplateVersion } from 'src/contract-templates/entities/contract-template-version.entity';
+import { TemplateQuestion } from 'src/contract-templates/entities/template-question.entity';
+import { TemplateQuestionOption } from 'src/contract-templates/entities/template-question-option.entity';
+import { TemplateSection } from 'src/contract-templates/entities/template-section.entity';
 import { CreateContractDraftDto } from './dto/create-contract-draft.dto';
 import { CreateChatMessageDto } from './dto/create-chat-message.dto';
 import { GenerateContractDto } from './dto/generate-contract.dto';
 import { SubscriptionTier, User } from 'src/users/entities/user.entity';
+import { buildDocxBuffer, buildPdfBuffer } from './contract-export.util';
 
 type MlChatRole = 'system' | 'user' | 'assistant';
 
@@ -80,6 +85,18 @@ export class ContractsService {
         @InjectRepository(ContractQuestionTemplate)
         private questionTemplates: Repository<ContractQuestionTemplate>,
 
+        @InjectRepository(ContractTemplateVersion)
+        private templateVersions: Repository<ContractTemplateVersion>,
+
+        @InjectRepository(TemplateQuestion)
+        private templateQuestions: Repository<TemplateQuestion>,
+
+        @InjectRepository(TemplateQuestionOption)
+        private templateQuestionOptions: Repository<TemplateQuestionOption>,
+
+        @InjectRepository(TemplateSection)
+        private templateSections: Repository<TemplateSection>,
+
         @InjectRepository(User)
         private users: Repository<User>,
     ) { }
@@ -131,6 +148,49 @@ export class ContractsService {
         });
     }
 
+    async downloadDraft(
+        draftId: string,
+        userId: string,
+        format: 'pdf' | 'docx' | 'txt',
+    ) {
+        const draft = await this.getDraftForUserOrThrow(draftId, userId);
+        if (!draft.ai_draft_text) {
+            throw new BadRequestException('Contract has not been generated yet.');
+        }
+
+        const baseName =
+            draft.contractType?.name ||
+            draft.title ||
+            'lexgen-contract';
+        const safeBase = baseName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/(^-|-$)/g, '');
+
+        if (format === 'pdf') {
+            return {
+                buffer: buildPdfBuffer(draft.ai_draft_text),
+                filename: `${safeBase || 'lexgen-contract'}.pdf`,
+                mime: 'application/pdf',
+            };
+        }
+
+        if (format === 'docx') {
+            return {
+                buffer: buildDocxBuffer(draft.ai_draft_text),
+                filename: `${safeBase || 'lexgen-contract'}.docx`,
+                mime:
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            };
+        }
+
+        return {
+            buffer: Buffer.from(draft.ai_draft_text, 'utf8'),
+            filename: `${safeBase || 'lexgen-contract'}.txt`,
+            mime: 'text/plain',
+        };
+    }
+
     private async getDraftForUserOrThrow(
         draftId: string,
         userId: string,
@@ -150,15 +210,191 @@ export class ContractsService {
 
         // Attach question templates for this contract type
         if (draft.contractType) {
+            await this.attachTemplateSections(draft.contractType);
             const qts = await this.questionTemplates.find({
                 where: { contractType: { id: draft.contractType.id } },
                 order: { order: 'ASC' },
             });
 
-            (draft.contractType as any).questionTemplates = qts;
+            if (qts.length > 0) {
+                (draft.contractType as any).questionTemplates = qts;
+            } else {
+                const fallback = await this.buildFallbackQuestionTemplates(
+                    draft.contractType,
+                );
+                if (fallback.length > 0) {
+                    this.logger.warn(
+                        `No contract_question_templates for contractType=${draft.contractType.name}. Using template_questions fallback (${fallback.length}).`,
+                    );
+                    (draft.contractType as any).questionTemplates = fallback;
+                } else {
+                    (draft.contractType as any).questionTemplates = [];
+                }
+            }
         }
 
         return draft;
+    }
+
+    private async attachTemplateSections(contractType: ContractType) {
+        const templateVersion = await this.templateVersions.findOne({
+            where: { contractTypeName: contractType.name },
+            order: { createdAt: 'DESC' },
+        });
+
+        if (!templateVersion) {
+            (contractType as any).templateSections = [];
+            return;
+        }
+
+        const sections = await this.templateSections.find({
+            where: { templateVersionId: templateVersion.id },
+            order: { displayOrder: 'ASC' },
+        });
+
+        if (sections.length > 0) {
+            (contractType as any).templateSections = sections.map((section) => ({
+                id: section.id,
+                sectionCode: section.sectionCode,
+                name: section.name,
+                displayOrder: section.displayOrder,
+            }));
+            return;
+        }
+
+        const questions = await this.templateQuestions.find({
+            where: { templateVersionId: templateVersion.id },
+            order: { questionCode: 'ASC' },
+        });
+
+        const seen = new Set<string>();
+        const fallbackSections = [] as {
+            sectionCode: string;
+            name: string;
+            displayOrder: number;
+        }[];
+
+        const formatName = (value: string) =>
+            value
+                .toLowerCase()
+                .split(/[_\s]+/)
+                .filter(Boolean)
+                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+
+        questions.forEach((question) => {
+            const code = question.sectionCode;
+            if (!code || seen.has(code)) return;
+            seen.add(code);
+            fallbackSections.push({
+                sectionCode: code,
+                name: formatName(code),
+                displayOrder: fallbackSections.length + 1,
+            });
+        });
+
+        (contractType as any).templateSections = fallbackSections;
+    }
+
+    private async buildFallbackQuestionTemplates(
+        contractType: ContractType,
+    ): Promise<ContractQuestionTemplate[]> {
+        const templateVersion = await this.templateVersions.findOne({
+            where: { contractTypeName: contractType.name },
+            order: { createdAt: 'DESC' },
+        });
+
+        if (!templateVersion) {
+            return [];
+        }
+
+        const [sections, questions, options] = await Promise.all([
+            this.templateSections.find({
+                where: { templateVersionId: templateVersion.id },
+            }),
+            this.templateQuestions.find({
+                where: { templateVersionId: templateVersion.id },
+            }),
+            this.templateQuestionOptions.find({
+                where: { templateVersionId: templateVersion.id },
+            }),
+        ]);
+
+        if (!questions.length) {
+            return [];
+        }
+
+        const sectionOrder = new Map(
+            sections.map((section) => [section.sectionCode, section.displayOrder]),
+        );
+        const optionsByQuestion = new Map<string, string[]>();
+
+        options.forEach((opt) => {
+            const key = opt.questionCode;
+            const list = optionsByQuestion.get(key) ?? [];
+            const label = opt.optionLabel || opt.optionValue;
+            if (label) {
+                list.push(label);
+            }
+            optionsByQuestion.set(key, list);
+        });
+
+        const basicSections = new Set(['PARTIES', 'ROLE', 'REMUNERATION']);
+        const sorted = [...questions].sort((a, b) => {
+            const aOrder = sectionOrder.get(a.sectionCode) ?? 0;
+            const bOrder = sectionOrder.get(b.sectionCode) ?? 0;
+            if (aOrder !== bOrder) return aOrder - bOrder;
+            return a.questionCode.localeCompare(b.questionCode);
+        });
+
+        return sorted.map((q, index) => {
+            const questionType = this.mapTemplateQuestionType(q.questionType);
+            const rawChoices = optionsByQuestion.get(q.questionCode) ?? [];
+            const choices =
+                rawChoices.length > 0
+                    ? rawChoices
+                    : q.questionType === 'yes-no'
+                        ? ['Yes', 'No']
+                        : [];
+
+            return {
+                id: `template-${templateVersion.id}-${q.questionCode}`,
+                order: index + 1,
+                questionKey: q.variableKey || q.questionCode,
+                label: q.questionText,
+                description: null as string | null,
+                inputType: questionType as any,
+                options: choices.length ? { choices } : null,
+                isRequired: q.isRequired,
+                complexityLevel: basicSections.has(q.sectionCode)
+                    ? 'basic'
+                    : 'standard',
+                contractType: null,
+            } as unknown as ContractQuestionTemplate;
+        });
+    }
+
+    private mapTemplateQuestionType(questionType: string) {
+        const normalized = questionType.trim().toLowerCase();
+        switch (normalized) {
+            case 'multi-select':
+                return 'multi_select';
+            case 'yes-no':
+                return 'select';
+            case 'currency':
+            case 'percentage':
+                return 'number';
+            case 'number':
+                return 'number';
+            case 'date':
+                return 'date';
+            case 'select':
+                return 'select';
+            case 'text':
+                return 'text';
+            default:
+                return 'text';
+        }
     }
 
     async getDraftWithMessages(draftId: string, userId: string) {

@@ -47,7 +47,20 @@ export class BillingService {
     if (!stripeConfig) {
       throw new Error('Stripe config not loaded. Did you add load:[stripeConfig] in AppModule?');
     }
-    initStripePrices(stripeConfig.prices);
+    const isProd = process.env.NODE_ENV === 'production';
+    const prices = stripeConfig.prices ?? {};
+    try {
+      initStripePrices(prices);
+    } catch (err: any) {
+      if (isProd) {
+        throw err;
+      }
+      const fallbackPrices = this.buildFallbackPrices(prices);
+      initStripePrices(fallbackPrices);
+      this.logger.warn(
+        `Stripe price config invalid (${err?.message || 'unknown error'}). Using dev fallback prices.`,
+      );
+    }
     this.logger.log(
       `Stripe prices loaded: ${JSON.stringify(STRIPE_PRICE_IDS, null, 2)}`,
     );
@@ -55,7 +68,10 @@ export class BillingService {
     const mode = stripeConfig?.mode ?? process.env.STRIPE_MODE ?? 'test';
 
     if (!secretKey) {
-      throw new Error('Missing STRIPE_SECRET_KEY environment variable');
+      if (isProd) {
+        throw new Error('Missing STRIPE_SECRET_KEY environment variable');
+      }
+      this.logger.warn('Missing STRIPE_SECRET_KEY. Using dev placeholder key.');
     }
 
     if (!['test', 'live'].includes(mode)) {
@@ -64,7 +80,7 @@ export class BillingService {
       );
     }
 
-    this.stripe = new Stripe(secretKey, {
+    this.stripe = new Stripe(secretKey || 'sk_test_dummy', {
       // pick the actual version you pin to in Stripe dashboard
       apiVersion: '2025-11-17.clover',
     });
@@ -75,6 +91,39 @@ export class BillingService {
       'http://localhost:8080';
 
     this.logger.log(`Stripe initialized in ${mode.toUpperCase()} mode`);
+  }
+
+  private buildFallbackPrices(prices: {
+    PRO_MONTHLY?: string;
+    PRO_YEARLY?: string;
+    BUSINESS_MONTHLY?: string;
+    BUSINESS_YEARLY?: string;
+  }) {
+    const entries: Array<[string, string | undefined]> = [
+      ['PRO_MONTHLY', prices.PRO_MONTHLY],
+      ['PRO_YEARLY', prices.PRO_YEARLY],
+      ['BUSINESS_MONTHLY', prices.BUSINESS_MONTHLY],
+      ['BUSINESS_YEARLY', prices.BUSINESS_YEARLY],
+    ];
+    const used = new Set<string>();
+    const fallback: Record<string, string> = {};
+
+    for (const [key, value] of entries) {
+      const base = value?.trim() || `dev_${key.toLowerCase()}`;
+      let candidate = base;
+      if (used.has(candidate)) {
+        candidate = `${base}_${key.toLowerCase()}`;
+      }
+      used.add(candidate);
+      fallback[key] = candidate;
+    }
+
+    return fallback as {
+      PRO_MONTHLY: string;
+      PRO_YEARLY: string;
+      BUSINESS_MONTHLY: string;
+      BUSINESS_YEARLY: string;
+    };
   }
 
   // ========== Public methods ==========

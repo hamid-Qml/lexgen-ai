@@ -8,6 +8,7 @@ from base_models import (
     ChatMessage,
 )
 from ml_service import MLService
+from constants import CLAUDE_SONNET_4_5_INPUT_COST_PER_MILLION
 from prompts import (
     CONTRACT_CHAT_SYSTEM_PROMPT,
     CONTRACT_GENERATION_SYSTEM_PROMPT,
@@ -195,14 +196,23 @@ Precedent snippets (if any):
         len(req.context.template_questions),
     )
 
-    contract_text = ml_service.call_llm_text(
+    contract_text, usage = ml_service.call_llm_text_with_usage(
         messages=anthropic_messages,
         system=CONTRACT_GENERATION_SYSTEM_PROMPT,
         max_tokens=5000,
         temperature=0.4,
     )
 
-    print("CONTRACT TEXT: ", contract_text)
+    input_tokens = usage.get("input_tokens") or 0
+    output_tokens = usage.get("output_tokens") or 0
+    cost_usd = (input_tokens / 1_000_000) * CLAUDE_SONNET_4_5_INPUT_COST_PER_MILLION
+    logger.info(
+        "generate_contract: model=%s input_tokens=%s output_tokens=%s cost_usd=%.6f",
+        usage.get("model"),
+        input_tokens,
+        output_tokens,
+        cost_usd,
+    )
 
     return GenerateContractResponse(
         draft_id=req.draft_id,

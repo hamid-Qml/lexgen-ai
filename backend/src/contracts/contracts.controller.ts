@@ -7,10 +7,13 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
   Logger,
+  StreamableFile,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import type { Response } from 'express';
 import { ContractsService } from './contracts.service';
 import { CreateContractDraftDto } from './dto/create-contract-draft.dto';
 import { CreateChatMessageDto } from './dto/create-chat-message.dto';
@@ -52,6 +55,29 @@ export class ContractsController {
     const userId = req.user.userId;
     this.logger.debug(`getDraft ${id} for user ${userId}`);
     return this.contracts.getDraftWithMessages(id, userId);
+  }
+
+  @Get(':id/download')
+  async downloadDraft(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Query('format') format = 'txt',
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const userId = req.user.userId;
+    const normalized =
+      format === 'pdf' || format === 'docx' ? format : 'txt';
+    const file = await this.contracts.downloadDraft(
+      id,
+      userId,
+      normalized,
+    );
+    res.setHeader('Content-Type', file.mime);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.filename}"`,
+    );
+    return new StreamableFile(file.buffer);
   }
 
   @Post(':id/messages')

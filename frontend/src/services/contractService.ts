@@ -1,5 +1,5 @@
 // src/services/contractService.ts
-import { api } from "./api";
+import { api, getToken } from "./api";
 
 export type CreateDraftPayload = {
   contractTypeId?: string;
@@ -45,5 +45,28 @@ export const contractService = {
       method: "POST",
       body,
     });
+  },
+
+  async downloadDraft(id: string, format: "pdf" | "docx" | "txt") {
+    const token = getToken();
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/contracts/${id}/download?format=${format}`,
+      {
+        method: "GET",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: "include",
+      },
+    );
+
+    if (!res.ok) {
+      const payload = await res.text().catch(() => null);
+      throw new Error(payload || "Failed to download contract");
+    }
+
+    const blob = await res.blob();
+    const disposition = res.headers.get("content-disposition") || "";
+    const filenameMatch = disposition.match(/filename="(.+?)"/i);
+    const filename = filenameMatch?.[1] || `contract.${format}`;
+    return { blob, filename };
   },
 };

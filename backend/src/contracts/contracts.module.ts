@@ -8,10 +8,24 @@ import { ContractsController } from './contracts.controller';
 import { ContractType } from 'src/contract-catalog/entities/contract-type.entity';
 import { User } from 'src/users/entities/user.entity';
 import { ContractQuestionTemplate } from 'src/contract-catalog/entities/contract-question-template.entity';
+import { ContractTemplateVersion } from 'src/contract-templates/entities/contract-template-version.entity';
+import { TemplateQuestion } from 'src/contract-templates/entities/template-question.entity';
+import { TemplateQuestionOption } from 'src/contract-templates/entities/template-question-option.entity';
+import { TemplateSection } from 'src/contract-templates/entities/template-section.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([ContractDraft, ChatMessage, ContractType, User, ContractQuestionTemplate]),
+    TypeOrmModule.forFeature([
+      ContractDraft,
+      ChatMessage,
+      ContractType,
+      User,
+      ContractQuestionTemplate,
+      ContractTemplateVersion,
+      TemplateQuestion,
+      TemplateQuestionOption,
+      TemplateSection,
+    ]),
   ],
   providers: [ContractsService],
   controllers: [ContractsController],

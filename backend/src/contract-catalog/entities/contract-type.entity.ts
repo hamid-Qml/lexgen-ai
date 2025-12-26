@@ -5,6 +5,7 @@ import {
   Column,
   OneToMany,
 } from 'typeorm';
+import { Expose } from 'class-transformer';
 import { ContractQuestionTemplate } from './contract-question-template.entity';
 import { PrecedentDocument } from './precedent-document.entity';
 import { ContractDraft } from '../../contracts/entities/contract-draft.entity';
@@ -62,4 +63,12 @@ export class ContractType {
 
   @OneToMany(() => ContractDraft, (d) => d.contractType)
   drafts: ContractDraft[];
+
+  @Expose()
+  templateSections?: {
+    id?: string;
+    sectionCode: string;
+    name: string;
+    displayOrder: number;
+  }[];
 }

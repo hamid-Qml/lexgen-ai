@@ -84,6 +84,49 @@ class MLService:
         logger.debug("call_llm_text: got %d chars", len(text))
         return text
 
+    def call_llm_text_with_usage(
+        self,
+        messages: List[Dict[str, str]],
+        model: Optional[str] = None,
+        max_tokens: int = 2000,
+        temperature: float = 0.4,
+        system: Optional[str] = None,
+    ) -> tuple[str, Dict[str, Any]]:
+        m = self._build_messages(messages)
+        chosen_model = model or self.model
+
+        logger.debug(
+            "call_llm_text_with_usage: %s",
+            {
+                "model": chosen_model,
+                "num_messages": len(m),
+                "has_system": bool(system),
+            },
+        )
+
+        resp = self.raw_client.messages.create(
+            model=chosen_model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            messages=m,
+            **({"system": system} if system else {}),
+        )
+
+        text_chunks = [
+            b.text for b in resp.content if getattr(b, "type", None) == "text"
+        ]
+        text = "".join(text_chunks).strip()
+
+        usage = getattr(resp, "usage", None)
+        input_tokens = getattr(usage, "input_tokens", None)
+        output_tokens = getattr(usage, "output_tokens", None)
+
+        return text, {
+            "model": chosen_model,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        }
+
     def call_llm_structured(
         self,
         *,

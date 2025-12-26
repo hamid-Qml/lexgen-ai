@@ -42,25 +42,45 @@ export function initStripePrices(prices: {
   BUSINESS_MONTHLY: string;
   BUSINESS_YEARLY: string;
 }) {
+  const isProd = process.env.NODE_ENV === 'production';
+  const allowInvalid =
+    process.env.STRIPE_ALLOW_INVALID_PRICES === 'true' || !isProd;
+
   const entries = Object.entries(prices);
-  const missing = entries.filter(
-    ([, value]) => typeof value !== 'string' || value.trim() === '',
-  );
-  if (missing.length) {
-    throw new Error(
-      `Missing Stripe price IDs: ${missing.map(([key]) => key).join(', ')}`,
-    );
-  }
-  const values = entries.map(([, value]) => value.trim());
-  const unique = new Set(values);
-  if (unique.size !== values.length) {
-    throw new Error('Stripe price IDs must be unique');
+  const normalized: Record<string, string> = {};
+  const seen = new Set<string>();
+
+  for (const [key, rawValue] of entries) {
+    const trimmed = typeof rawValue === 'string' ? rawValue.trim() : '';
+    let value = trimmed;
+
+    if (!value) {
+      if (!allowInvalid) {
+        throw new Error(`Missing Stripe price ID: ${key}`);
+      }
+      value = `dev_${key.toLowerCase()}`;
+    }
+
+    if (seen.has(value)) {
+      if (!allowInvalid) {
+        throw new Error('Stripe price IDs must be unique');
+      }
+      let candidate = `${value}_${key.toLowerCase()}`;
+      let suffix = 1;
+      while (seen.has(candidate)) {
+        candidate = `${value}_${key.toLowerCase()}_${suffix++}`;
+      }
+      value = candidate;
+    }
+
+    seen.add(value);
+    normalized[key] = value;
   }
 
-  STRIPE_PRICE_IDS.pro_monthly = prices.PRO_MONTHLY;
-  STRIPE_PRICE_IDS.pro_yearly = prices.PRO_YEARLY;
-  STRIPE_PRICE_IDS.business_monthly = prices.BUSINESS_MONTHLY;
-  STRIPE_PRICE_IDS.business_yearly = prices.BUSINESS_YEARLY;
+  STRIPE_PRICE_IDS.pro_monthly = normalized.PRO_MONTHLY;
+  STRIPE_PRICE_IDS.pro_yearly = normalized.PRO_YEARLY;
+  STRIPE_PRICE_IDS.business_monthly = normalized.BUSINESS_MONTHLY;
+  STRIPE_PRICE_IDS.business_yearly = normalized.BUSINESS_YEARLY;
 
   STRIPE_PLAN_KEY_TO_PRICE_ID = { ...STRIPE_PRICE_IDS };
 
