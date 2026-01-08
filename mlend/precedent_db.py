@@ -39,12 +39,37 @@ def _fetch_sections(query: str, params: tuple) -> List[Dict[str, Any]]:
             return [dict(row) for row in rows]
 
 
+def _table_exists(table_name: str) -> bool:
+    sql = "SELECT to_regclass(%s) AS name"
+    row = _fetch_one(sql, (f"public.{table_name}",))
+    return bool(row and row.get("name"))
+
+
+def _normalize_sections(raw_sections: Any) -> List[Dict[str, Any]]:
+    if not raw_sections or not isinstance(raw_sections, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    for section in raw_sections:
+        if not isinstance(section, dict):
+            continue
+        heading = str(section.get("heading") or "").strip()
+        body = str(
+            section.get("body")
+            if section.get("body") is not None
+            else section.get("text") or ""
+        ).strip()
+        if heading or body:
+            normalized.append({"heading": heading, "body": body})
+    return normalized
+
+
 def _query_doc_by_contract_type_id(contract_type_id: str) -> Optional[Dict[str, Any]]:
     sql = """
         SELECT
             title,
             front_matter,
-            placeholders
+            placeholders,
+            sections
         FROM precedent_documents
         WHERE "contractTypeId" = %s
         ORDER BY created_at DESC
@@ -58,7 +83,8 @@ def _query_doc_by_contract_type_name(contract_type_name: str) -> Optional[Dict[s
         SELECT
             p.title,
             p.front_matter,
-            p.placeholders
+            p.placeholders,
+            p.sections
         FROM precedent_documents p
         JOIN contract_types ct ON p."contractTypeId" = ct.id
         WHERE ct.name = %s
@@ -69,6 +95,8 @@ def _query_doc_by_contract_type_name(contract_type_name: str) -> Optional[Dict[s
 
 
 def _query_sections_by_contract_type_id(contract_type_id: str) -> List[Dict[str, Any]]:
+    if not _table_exists("precedent_sections"):
+        return []
     sql = """
         SELECT
             section_key,
@@ -87,6 +115,8 @@ def _query_sections_by_contract_type_id(contract_type_id: str) -> List[Dict[str,
 
 
 def _query_sections_by_contract_type_name(contract_type_name: str) -> List[Dict[str, Any]]:
+    if not _table_exists("precedent_sections"):
+        return []
     sql = """
         SELECT
             s.section_key,
@@ -105,37 +135,18 @@ def _query_sections_by_contract_type_name(contract_type_name: str) -> List[Dict[
     return _fetch_sections(sql, (contract_type_name,))
 
 
-def _merge_sections(
+def _build_outline(
+    doc: Optional[Dict[str, Any]],
     sections: List[Dict[str, Any]],
-    target_max: int = 7,
-) -> List[Dict[str, Any]]:
+) -> Optional[Dict[str, Any]]:
     if not sections:
-        return []
-    if len(sections) <= target_max:
-        return [
-            {
-                "heading": (section.get("heading") or "").strip(),
-                "body": (section.get("text") or "").strip(),
-            }
-            for section in sections
-        ]
-
-    chunk_size = (len(sections) + target_max - 1) // target_max
-    merged: List[Dict[str, Any]] = []
-    for i in range(0, len(sections), chunk_size):
-        chunk = sections[i:i + chunk_size]
-        headings = [s.get("heading") for s in chunk if s.get("heading")]
-        combined_heading = " / ".join(headings) if headings else "Combined section"
-        combined_text = "\n\n".join(
-            (s.get("text") or "").strip() for s in chunk if (s.get("text") or "").strip()
-        )
-        merged.append(
-            {
-                "heading": combined_heading,
-                "body": combined_text,
-            }
-        )
-    return merged
+        return None
+    return {
+        "title": (doc or {}).get("title"),
+        "front_matter": list((doc or {}).get("front_matter") or []),
+        "placeholders": list((doc or {}).get("placeholders") or []),
+        "sections": sections,
+    }
 
 
 def get_precedent_outline_from_db(
@@ -151,40 +162,30 @@ def get_precedent_outline_from_db(
     """
     if contract_type_id:
         doc = _query_doc_by_contract_type_id(contract_type_id)
-        sections = _query_sections_by_contract_type_id(contract_type_id)
-        merged_sections = _merge_sections(sections)
-        if doc and merged_sections:
-            return {
-                "title": doc.get("title"),
-                "front_matter": doc.get("front_matter"),
-                "placeholders": doc.get("placeholders"),
-                "sections": merged_sections,
-            }
-        if merged_sections:
-            return {
-                "title": None,
-                "front_matter": [],
-                "placeholders": [],
-                "sections": merged_sections,
-            }
+        doc_sections = _normalize_sections((doc or {}).get("sections"))
+        outline = _build_outline(doc, doc_sections)
+        if outline:
+            return outline
+
+        table_sections = _normalize_sections(
+            _query_sections_by_contract_type_id(contract_type_id)
+        )
+        outline = _build_outline(doc, table_sections)
+        if outline:
+            return outline
 
     if contract_type_name:
         doc = _query_doc_by_contract_type_name(contract_type_name)
-        sections = _query_sections_by_contract_type_name(contract_type_name)
-        merged_sections = _merge_sections(sections)
-        if doc and merged_sections:
-            return {
-                "title": doc.get("title"),
-                "front_matter": doc.get("front_matter"),
-                "placeholders": doc.get("placeholders"),
-                "sections": merged_sections,
-            }
-        if merged_sections:
-            return {
-                "title": None,
-                "front_matter": [],
-                "placeholders": [],
-                "sections": merged_sections,
-            }
+        doc_sections = _normalize_sections((doc or {}).get("sections"))
+        outline = _build_outline(doc, doc_sections)
+        if outline:
+            return outline
+
+        table_sections = _normalize_sections(
+            _query_sections_by_contract_type_name(contract_type_name)
+        )
+        outline = _build_outline(doc, table_sections)
+        if outline:
+            return outline
 
     return None
