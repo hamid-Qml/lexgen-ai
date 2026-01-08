@@ -7,12 +7,12 @@ export default function Hero() {
       <div className="flex flex-col items-center w-[834px] mt-14 gap-12 px-2 py-4 z-10">
         <div className="flex flex-col items-center justify-center gap-4">
           <h1 className="text-[64px] font-medium">
-            Contract Review in <br />
+            Contract Generation in <br />
             Minutes, Not Days
           </h1>
           <p className="font-normal text-center text-[18px]">
-            AI-powered legal review that actually works. Every answer cites its
-            source. <br />
+            AI-powered contract generation grounded in your inputs and verified
+            precedent. <br />
             Built on 30 years of verified legal documents.
           </p>
           <div className="flex items-center gap-4">
@@ -29,9 +29,9 @@ export default function Hero() {
           font-medium h-10 flex items-center justify-center text-[16px]"
         >
           <img src="/Eye.svg" width="16px" height="16px" />
-          <p>Zero hallucinations</p>
+          <p>Source-aware drafting</p>
           <img src="/DotOutline.svg" width="16px" height="16px" />
-          <p>Every answer cites is sources</p>
+          <p>Citations for key clauses</p>
         </div>
 
         <div className="flex items-center justify-center gap-4">

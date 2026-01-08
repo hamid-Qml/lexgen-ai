@@ -48,7 +48,7 @@ export default function Action() {
             >
               <img src="/caution.svg" width="80px" height="80px" />
               <p className="text-white text-[20px] font-medium">
-                Works with any contract format instantly
+                Supports a wide range of contract formats
               </p>
             </div>
           </div>

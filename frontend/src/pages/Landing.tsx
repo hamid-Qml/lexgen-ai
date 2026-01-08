@@ -1,6 +1,3 @@
-import { Button } from "@/components/ui/button";
-import { useNavigate } from "react-router-dom";
-import { FileText, Sparkles, Shield, Zap } from "lucide-react";
 import TopBar from "@/components/topbar";
 import Hero from "@/components/hero";
 import Trust from "@/components/trust";
@@ -10,11 +7,9 @@ import Footer from "@/components/footer";
 import Action from "@/components/action";
 import Benefits from "@/components/benefits";
 import FAQs from "@/components/faq";
-import Videos from "@/components/videos";
+import Pricing from "@/components/pricing";
 
 const Landing = () => {
-  const navigate = useNavigate();
-
   return (
     <>
       <div className="flex items-center justify-center w-full bg-background">
@@ -25,10 +20,10 @@ const Landing = () => {
           <Hero />
           <Trust />
           <Stats />
+          <Pricing />
           <Action />
           <FeaturedVideo />
           <Benefits />
-          <Videos />
           <FAQs />
         </div>
       </div>

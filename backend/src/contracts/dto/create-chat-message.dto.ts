@@ -1,5 +1,5 @@
 // src/contracts/dto/create-chat-message.dto.ts
-import { IsIn, IsString } from 'class-validator';
+import { IsIn, IsString, IsOptional, IsObject } from 'class-validator';
 
 export class CreateChatMessageDto {
   @IsString()
@@ -8,4 +8,8 @@ export class CreateChatMessageDto {
 
   @IsString()
   message: string;
+
+  @IsOptional()
+  @IsObject()
+  answers?: Record<string, any>;
 }

@@ -31,6 +31,15 @@ export class PrecedentDocument {
     @Column({ name: 'source_path' })
     sourcePath: string;
 
+    @Column({ name: 'front_matter', type: 'jsonb', nullable: true })
+    frontMatter: string[] | null;
+
+    @Column({ type: 'jsonb', nullable: true })
+    sections: Array<{ heading: string; body: string }> | null;
+
+    @Column({ type: 'jsonb', nullable: true })
+    placeholders: string[] | null;
+
     // For now, store embeddings as JSON (number[])
     // You can switch to Postgres 'vector' type later if extension is installed.
     @Column({ name: 'embedding_vector', type: 'jsonb', nullable: true })

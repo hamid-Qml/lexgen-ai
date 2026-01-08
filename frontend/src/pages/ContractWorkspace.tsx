@@ -118,6 +118,33 @@ const normalizeQuestionText = (value: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
+const MAX_FORM_QUESTIONS = 10;
+const CONVERSATIONAL_KEYWORDS = [
+  "duties",
+  "responsibil",
+  "scope",
+  "describe",
+  "description",
+  "details",
+  "background",
+];
+
+const normalizeGenerateCommand = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const isGenerateCommand = (value: string) => {
+  const normalized = normalizeGenerateCommand(value);
+  return (
+    normalized === "generate" ||
+    normalized === "generate contract" ||
+    normalized === "generate the contract"
+  );
+};
+
 const scoreQuestionMatch = (normalizedMessage: string, label: string) => {
   const normalizedLabel = normalizeQuestionText(label);
   if (!normalizedLabel) return 0;
@@ -175,6 +202,13 @@ const coerceAnswerValue = (
   }
 
   return value;
+};
+
+const isConversationalQuestion = (question: BackendQuestionTemplate) => {
+  if (question.inputType === "textarea") return true;
+  const combined = `${question.label} ${question.description ?? ""}`;
+  const normalized = normalizeQuestionText(combined);
+  return CONVERSATIONAL_KEYWORDS.some((keyword) => normalized.includes(keyword));
 };
 
 const renderWithPlaceholders = (text: string) => {
@@ -319,11 +353,17 @@ export default function ContractWorkspace() {
   const mergeAnswers = (
     d: BackendContractDraft | null,
     fallback: Record<string, any> = {},
-  ) => ({
-    ...fallback,
-    ...(d?.questionnaire_state || {}),
-    ...((d?.ai_inputs?.chat_answers as Record<string, any>) || {}),
-  });
+  ) => {
+    const merged = {
+      ...fallback,
+      ...(d?.questionnaire_state || {}),
+      ...((d?.ai_inputs?.chat_answers as Record<string, any>) || {}),
+    };
+    if (!merged.jurisdiction && d?.jurisdiction) {
+      merged.jurisdiction = d.jurisdiction;
+    }
+    return merged;
+  };
 
   const [draft, setDraft] = useState<BackendContractDraft | null>(null);
   const [messages, setMessages] = useState<BackendChatMessage[]>([]);
@@ -340,7 +380,14 @@ export default function ContractWorkspace() {
   const [assistantThinking, setAssistantThinking] = useState(false);
   const [generationProgress, setGenerationProgress] = useState(0);
   const [generationStep, setGenerationStep] = useState("");
+  const [useServerProgress, setUseServerProgress] = useState(false);
   const generationTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const progressPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressSessionRef = useRef(0);
+  const progressActiveRef = useRef(false);
+  const progressCompletedRef = useRef(false);
+  const useServerProgressRef = useRef(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -360,6 +407,94 @@ export default function ContractWorkspace() {
     generationTimers.current = [];
   };
 
+  const stopProgressPolling = () => {
+    progressActiveRef.current = false;
+    progressSessionRef.current += 1;
+    useServerProgressRef.current = false;
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+    if (progressPollRef.current) {
+      clearInterval(progressPollRef.current);
+      progressPollRef.current = null;
+    }
+  };
+
+  const applyServerProgress = (progress: any) => {
+    if (!progress) return;
+    const status = progress.status as string | undefined;
+    if (!status || status === "idle" || status === "unavailable") return;
+
+    if (status === "completed") {
+      if (!progressCompletedRef.current) {
+        finishGenerationProgress("success");
+      }
+      return;
+    }
+
+    if (status === "failed") {
+      if (!progressCompletedRef.current) {
+        finishGenerationProgress("error");
+      }
+      return;
+    }
+
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+
+    setUseServerProgress((prev) => {
+      if (!prev) clearGenerationTimers();
+      useServerProgressRef.current = true;
+      return true;
+    });
+
+    if (typeof progress.percent === "number") {
+      setGenerationProgress(progress.percent);
+    }
+    if (progress.current_step) {
+      setGenerationStep(progress.current_step);
+    }
+  };
+
+  const pollServerProgress = async (session: number) => {
+    if (!id || session !== progressSessionRef.current || !progressActiveRef.current) {
+      return;
+    }
+    try {
+      const progress = await contractService.getGenerationProgress(id);
+      if (
+        session !== progressSessionRef.current ||
+        !progressActiveRef.current
+      ) {
+        return;
+      }
+      applyServerProgress(progress);
+    } catch {
+      // No-op: fallback UI handles progress if server polling fails.
+    }
+  };
+
+  const startProgressPolling = () => {
+    progressCompletedRef.current = false;
+    setUseServerProgress(false);
+    useServerProgressRef.current = false;
+    stopProgressPolling();
+    progressActiveRef.current = true;
+    setGenerationStep("Starting generation");
+    setGenerationProgress(2);
+    const session = progressSessionRef.current;
+    pollServerProgress(session);
+    progressPollRef.current = setInterval(() => pollServerProgress(session), 700);
+    fallbackTimerRef.current = setTimeout(() => {
+      if (useServerProgressRef.current || progressCompletedRef.current) return;
+      if (!progressActiveRef.current) return;
+      startGenerationProgress();
+    }, 3000);
+  };
+
   const startGenerationProgress = () => {
     clearGenerationTimers();
     const sectionLabels =
@@ -370,24 +505,31 @@ export default function ContractWorkspace() {
         .filter(Boolean) || [];
 
     if (sectionLabels.length > 0) {
+      const totalSections = sectionLabels.length;
       const stepDelay = 650;
-      const stepCount = sectionLabels.length + 1;
-      setGenerationStep(`Drafting ${sectionLabels[0]}`);
-      setGenerationProgress(Math.max(8, Math.round((1 / stepCount) * 90)));
+      const formatLabel = (label: string, index: number) =>
+        `Drafting ${label} (${index + 1} of ${totalSections})`;
+      const calcProgress = (index: number) => {
+        const raw = Math.round(((index + 1) / totalSections) * 100);
+        return Math.min(95, Math.max(8, raw));
+      };
+
+      setGenerationStep(formatLabel(sectionLabels[0], 0));
+      setGenerationProgress(calcProgress(0));
 
       sectionLabels.slice(1).forEach((label, idx) => {
-        const stepIndex = idx + 2;
+        const stepIndex = idx + 1;
         const timer = setTimeout(() => {
-          setGenerationStep(`Drafting ${label}`);
-          setGenerationProgress(Math.round((stepIndex / stepCount) * 90));
+          setGenerationStep(formatLabel(label, stepIndex));
+          setGenerationProgress(calcProgress(stepIndex));
         }, stepDelay * stepIndex);
         generationTimers.current.push(timer);
       });
 
       const finalTimer = setTimeout(() => {
         setGenerationStep("Finalizing contract");
-        setGenerationProgress(92);
-      }, stepDelay * (sectionLabels.length + 1));
+        setGenerationProgress(90);
+      }, stepDelay * totalSections);
       generationTimers.current.push(finalTimer);
       return;
     }
@@ -412,7 +554,11 @@ export default function ContractWorkspace() {
   };
 
   const finishGenerationProgress = (status: "success" | "error") => {
+    if (progressCompletedRef.current) return;
+    progressCompletedRef.current = true;
     clearGenerationTimers();
+    stopProgressPolling();
+    setUseServerProgress(false);
     if (status === "success") {
       setGenerationStep("Contract ready");
       setGenerationProgress(100);
@@ -428,7 +574,10 @@ export default function ContractWorkspace() {
   };
 
   useEffect(() => {
-    return () => clearGenerationTimers();
+    return () => {
+      clearGenerationTimers();
+      stopProgressPolling();
+    };
   }, []);
 
   // Helper: decide which questions belong on the “form” step
@@ -439,15 +588,20 @@ export default function ContractWorkspace() {
     // If we have an explicit list from backend, use that
     const primaryKeys = d.contractType.primaryFormKeys;
     if (primaryKeys && primaryKeys.length > 0) {
-      return all
+      const selected = all
         .filter((q) => primaryKeys.includes(q.questionKey))
         .sort((a, b) => a.order - b.order);
+      return selected
+        .filter((q) => !isConversationalQuestion(q))
+        .slice(0, MAX_FORM_QUESTIONS);
     }
 
     // Fallback heuristic: show BASIC questions in the form step
     return all
       .filter((q) => q.complexityLevel === "basic")
-      .sort((a, b) => a.order - b.order);
+      .filter((q) => !isConversationalQuestion(q))
+      .sort((a, b) => a.order - b.order)
+      .slice(0, MAX_FORM_QUESTIONS);
   };
 
   // required-field completeness based on templates
@@ -652,6 +806,11 @@ export default function ContractWorkspace() {
     if (!userInput.trim() || !draft || !id) return;
 
     const outbound = userInput.trim();
+    if (isGenerateCommand(outbound)) {
+      setUserInput("");
+      await handleGenerateContract();
+      return;
+    }
     const tempId = `temp-${Date.now()}`;
     const optimisticMessage: BackendChatMessage = {
       id: tempId,
@@ -684,12 +843,14 @@ export default function ContractWorkspace() {
           : null;
       const targetQuestion = inferredQuestion ?? fallbackQuestion;
 
+      let nextAnswers = answers;
       if (targetQuestion) {
         const coercedValue = coerceAnswerValue(outbound, targetQuestion);
-        setAnswers((prev) => ({
-          ...prev,
+        nextAnswers = {
+          ...answers,
           [targetQuestion.questionKey]: coercedValue,
-        }));
+        };
+        setAnswers(nextAnswers);
       }
       setMessages((prev) => [...prev, optimisticMessage]);
       setUserInput("");
@@ -702,6 +863,7 @@ export default function ContractWorkspace() {
       const updated = (await contractService.addMessage(id, {
         sender: "user",
         message: outbound,
+        answers: nextAnswers,
       })) as BackendContractDraft;
 
       setDraft(updated);
@@ -847,6 +1009,7 @@ export default function ContractWorkspace() {
 
     try {
       startGenerationProgress();
+      startProgressPolling();
       setGenerating(true);
 
       // Call backend, which calls mlend to generate the full contract text
@@ -1084,7 +1247,7 @@ export default function ContractWorkspace() {
               <div className="grid md:grid-cols-2 gap-4">
                 {primaryQuestions.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
-                    No form questions configured for this contract type yet.
+                    We'll capture the key details in chat for this contract.
                   </p>
                 ) : (
                   primaryQuestions.map((q) => renderField(q))

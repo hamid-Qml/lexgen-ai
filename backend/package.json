@@ -21,6 +21,7 @@
     "seed:contracts": "ts-node -r tsconfig-paths/register src/seeds/seed-contract-types.ts",
     "seed:templates": "ts-node -r tsconfig-paths/register src/seeds/seed-orchestrator-overrides.ts",
     "seed:template-ingest": "ts-node -r tsconfig-paths/register src/seeds/seed-template-ingest.ts",
+    "seed:precedents": "ts-node -r tsconfig-paths/register scripts/ingest-precedents.ts",
     "test:contract-flow": "node scripts/test-contract-flow.js",
     "admin:set-plan": "ts-node -r tsconfig-paths/register scripts/set-user-plan.ts",
     "migration:create": "ts-node ./node_modules/typeorm/cli.js migration:create src/migrations/manual",

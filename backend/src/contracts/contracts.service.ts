@@ -7,6 +7,7 @@ import axios from 'axios';
 import { ContractDraft } from './entities/contract-draft.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { ContractType } from 'src/contract-catalog/entities/contract-type.entity';
+import { PrecedentDocument } from 'src/contract-catalog/entities/precedent-document.entity';
 import { ContractQuestionTemplate } from 'src/contract-catalog/entities/contract-question-template.entity';
 import { ContractTemplateVersion } from 'src/contract-templates/entities/contract-template-version.entity';
 import { TemplateQuestion } from 'src/contract-templates/entities/template-question.entity';
@@ -60,12 +61,25 @@ type MlGenerateContractRequest = {
     context: MlContractContext;
     messages: MlChatMessage[];
     precedent_snippets?: string[];
+    precedent_outline?: MlPrecedentOutline | null;
 };
 
 type MlGenerateContractResponse = {
     draft_id: string;
     contract_text: string;
     revision_notes?: string | null;
+};
+
+type MlPrecedentSection = {
+    heading: string;
+    body: string;
+};
+
+type MlPrecedentOutline = {
+    title?: string | null;
+    front_matter?: string[] | null;
+    sections?: MlPrecedentSection[] | null;
+    placeholders?: string[] | null;
 };
 
 @Injectable()
@@ -97,6 +111,9 @@ export class ContractsService {
         @InjectRepository(TemplateSection)
         private templateSections: Repository<TemplateSection>,
 
+        @InjectRepository(PrecedentDocument)
+        private precedents: Repository<PrecedentDocument>,
+
         @InjectRepository(User)
         private users: Repository<User>,
     ) { }
@@ -123,7 +140,10 @@ export class ContractsService {
 
         const title = dto.title || `${contractType.name}`;
 
-        const jurisdiction = dto.jurisdiction || contractType.jurisdictionDefault;
+        const jurisdiction =
+            dto.jurisdiction ||
+            user.primary_jurisdiction ||
+            contractType.jurisdictionDefault;
 
         const draft = this.drafts.create({
             user,
@@ -418,6 +438,13 @@ export class ContractsService {
         const aiInputs = (draft.ai_inputs || {}) as any;
         const chat_answers = aiInputs.chat_answers || {};
         const clarifyingQuestions: string[] = ct?.clarifyingQuestions || [];
+        const form_answers = {
+            ...(draft.questionnaire_state || {}),
+        } as Record<string, any>;
+
+        if (!form_answers.jurisdiction && draft.jurisdiction) {
+            form_answers.jurisdiction = draft.jurisdiction;
+        }
 
         return {
             contract_type_id: ct?.id,
@@ -425,7 +452,7 @@ export class ContractsService {
             category: ct?.category || null,
             jurisdiction: draft.jurisdiction || ct?.jurisdictionDefault || null,
             template_questions,
-            form_answers: (draft.questionnaire_state || {}) as Record<string, any>,
+            form_answers,
             chat_answers,
             clarifying_questions: clarifyingQuestions,
         };
@@ -497,11 +524,13 @@ export class ContractsService {
     private async callMlGenerateContract(
         draft: ContractDraft,
     ): Promise<MlGenerateContractResponse> {
+        const precedent_outline = await this.resolvePrecedentOutline(draft);
         const payload: MlGenerateContractRequest = {
             draft_id: draft.id,
             context: this.buildMlContext(draft),
             messages: this.buildMlMessages(draft),
             precedent_snippets: [],
+            precedent_outline,
         };
 
         this.logger.debug(
@@ -532,6 +561,131 @@ export class ContractsService {
         }
     }
 
+    private async callMlProgress(draftId: string): Promise<Record<string, any>> {
+        try {
+            const res = await axios.get<Record<string, any>>(
+                `${this.mlBaseUrl}/contract/progress/${draftId}`,
+            );
+            return res.data;
+        } catch (e: any) {
+            this.logger.warn(
+                `ML progress call failed for draft ${draftId}: ${e?.message || 'unknown error'}`,
+            );
+            return {
+                draft_id: draftId,
+                status: 'unavailable',
+                percent: 0,
+                current_step: null,
+                completed_sections: 0,
+                total_sections: 0,
+                updated_at: null,
+                error: e?.message || 'ml progress unavailable',
+            };
+        }
+    }
+
+    private tokenize(text: string | null | undefined): string[] {
+        if (!text) return [];
+        return text
+            .toLowerCase()
+            .split(/[^a-z0-9]+/g)
+            .map((token) => token.trim())
+            .filter((token) => token.length > 2);
+    }
+
+    private scorePrecedent(precedent: PrecedentDocument, tokens: Set<string>): number {
+        const sourceTokens = new Set([
+            ...this.tokenize(precedent.title),
+            ...(precedent.keywords || []),
+        ]);
+        let score = 0;
+        for (const token of tokens) {
+            if (sourceTokens.has(token)) score += 1;
+        }
+        return score;
+    }
+
+    private async resolvePrecedentOutline(
+        draft: ContractDraft,
+    ): Promise<MlPrecedentOutline | null> {
+        const contractType = draft.contractType;
+        if (!contractType) return null;
+
+        let precedents = await this.precedents.find({
+            where: { contractType: { id: contractType.id } as any },
+            order: { createdAt: 'DESC' as any },
+        });
+
+        if (!precedents.length) {
+            precedents = await this.precedents.find({
+                where: {
+                    category: contractType.category,
+                    jurisdiction: draft.jurisdiction || contractType.jurisdictionDefault,
+                },
+                order: { createdAt: 'DESC' as any },
+            });
+        }
+
+        if (!precedents.length) {
+            precedents = await this.precedents.find({
+                where: { category: contractType.category },
+                order: { createdAt: 'DESC' as any },
+            });
+        }
+
+        if (!precedents.length) {
+            return this.buildOutlineFromTemplateSections(contractType);
+        }
+
+        const tokens = new Set(this.tokenize(contractType.name));
+        let best = precedents[0];
+        let bestScore = this.scorePrecedent(best, tokens);
+
+        for (const precedent of precedents.slice(1)) {
+            const score = this.scorePrecedent(precedent, tokens);
+            if (score > bestScore) {
+                best = precedent;
+                bestScore = score;
+            }
+        }
+
+        if (!best.sections || !best.sections.length) {
+            return this.buildOutlineFromTemplateSections(contractType);
+        }
+
+        return {
+            title: best.title,
+            front_matter: best.frontMatter || [],
+            sections: best.sections || [],
+            placeholders: best.placeholders || [],
+        };
+    }
+
+    private buildOutlineFromTemplateSections(
+        contractType: ContractType,
+    ): MlPrecedentOutline | null {
+        const sections = ((contractType as any).templateSections || []) as {
+            sectionCode: string;
+            name?: string | null;
+            displayOrder: number;
+        }[];
+        if (!sections.length) return null;
+
+        const ordered = [...sections].sort(
+            (a, b) => a.displayOrder - b.displayOrder,
+        );
+
+        return {
+            title: contractType.name,
+            front_matter: [],
+            sections: ordered.map((section) => ({
+                heading: section.name || section.sectionCode,
+                body: '',
+            })),
+            placeholders: [],
+        };
+    }
+
     /**
      * Append chat message to a draft.
      *
@@ -558,6 +712,14 @@ export class ContractsService {
         // Ensure the in-memory draft has the new message
         if (!draft.chatMessages) draft.chatMessages = [];
         draft.chatMessages.push(msg);
+
+        if (dto.answers && Object.keys(dto.answers).length > 0) {
+            draft.questionnaire_state = {
+                ...(draft.questionnaire_state || {}),
+                ...dto.answers,
+            };
+            await this.drafts.save(draft);
+        }
 
         // If this is a user message, we now invoke the AI to respond
         if (dto.sender === 'user') {
@@ -663,6 +825,20 @@ export class ContractsService {
         await this.drafts.save(draft);
 
         return this.getDraftWithMessages(draftId, userId);
+    }
+
+    async getGenerationProgress(draftId: string, userId: string) {
+        const exists = await this.drafts
+            .createQueryBuilder('draft')
+            .innerJoin('draft.user', 'user')
+            .where('draft.id = :draftId', { draftId })
+            .andWhere('user.id = :userId', { userId })
+            .select('draft.id')
+            .getOne();
+        if (!exists) {
+            throw new NotFoundException('Contract draft not found');
+        }
+        return this.callMlProgress(draftId);
     }
 
     /**

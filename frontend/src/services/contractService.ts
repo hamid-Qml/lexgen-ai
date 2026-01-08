@@ -24,7 +24,14 @@ export const contractService = {
     return api(`/contracts/${id}`, { method: "GET" });
   },
 
-  async addMessage(id: string, body: { sender: "user" | "assistant"; message: string }) {
+  async addMessage(
+    id: string,
+    body: {
+      sender: "user" | "assistant";
+      message: string;
+      answers?: Record<string, any>;
+    },
+  ) {
     return api(`/contracts/${id}/messages`, {
       method: "POST",
       body,
@@ -45,6 +52,10 @@ export const contractService = {
       method: "POST",
       body,
     });
+  },
+
+  async getGenerationProgress(id: string) {
+    return api(`/contracts/${id}/progress`, { method: "GET" });
   },
 
   async downloadDraft(id: string, format: "pdf" | "docx" | "txt") {

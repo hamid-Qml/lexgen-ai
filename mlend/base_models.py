@@ -44,6 +44,8 @@ class GenerateContractRequest(BaseModel):
     messages: List[ChatMessage]
     # You can add precedent snippets later
     precedent_snippets: Optional[List[str]] = None
+    precedent_paths: Optional[List[str]] = None
+    precedent_outline: Optional[Dict[str, Any]] = None
 
 
 class GenerateContractResponse(BaseModel):

@@ -27,7 +27,7 @@ export default function AuthShell({ children, eyebrow, title, description }: Pro
           </button>
           <div className="hidden sm:flex items-center gap-4 text-sm text-white/70">
             <span className="rounded-full bg-white/10 px-3 py-1">Secure by design</span>
-            <span className="rounded-full bg-white/10 px-3 py-1">Zero hallucinations</span>
+            <span className="rounded-full bg-white/10 px-3 py-1">Source-aware drafting</span>
           </div>
         </div>
       </header>

@@ -80,6 +80,13 @@ export class ContractsController {
     return new StreamableFile(file.buffer);
   }
 
+  @Get(':id/progress')
+  getProgress(@Req() req: any, @Param('id') id: string) {
+    const userId = req.user.userId;
+    this.logger.debug(`progress check for draft ${id} by user ${userId}`);
+    return this.contracts.getGenerationProgress(id, userId);
+  }
+
   @Post(':id/messages')
   addMessage(
     @Req() req: any,

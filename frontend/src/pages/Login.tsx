@@ -53,7 +53,9 @@ const Login = () => {
       <Card className="w-full max-w-xl mx-auto bg-card/70 border-white/10 shadow-2xl shadow-black/30 backdrop-blur">
         <CardHeader className="text-center space-y-2">
           <CardTitle className="text-2xl">Sign in to Lexy</CardTitle>
-          <CardDescription>AI-powered contract review with zero hallucinations.</CardDescription>
+          <CardDescription>
+            AI-powered contract generation grounded in verified precedent.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-5">
